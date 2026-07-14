@@ -1,0 +1,45 @@
+# Operational configuration — NOT strategy rules.
+# Strategy numbers (scoring, stops, targets, risk %, session windows, filters)
+# are frozen in src/m5_reversal_bot/core/constants.py and hash-locked against
+# docs/strategy/M5_Liquidity_Reversal_Playbook.md. Nothing here can change them.
+
+mode: PAPER  # BACKTEST | PAPER | DEMO | LIVE
+
+enabled_instruments:
+  - EURUSD
+  - XAUUSD
+
+poll_interval_seconds: 5
+display_timezone: GMT
+initial_equity: 10000.0
+
+mt5:
+  # Credentials come from environment variables (MT5_LOGIN, MT5_PASSWORD,
+  # MT5_SERVER) — see .env.example. The MetaTrader5 python package talks to
+  # the broker's trade server directly via the terminal's local IPC; no
+  # manual desktop-terminal interaction is used for order placement.
+  symbol_map:
+    EURUSD: EURUSD
+    XAUUSD: XAUUSD
+
+backtest:
+  data_dir: ./data/history
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  spread_model:
+    EURUSD: 0.00007   # 0.7 pip average modeled spread
+    XAUUSD: 0.20
+  slippage_model:
+    EURUSD: 0.00002
+    XAUUSD: 0.05
+
+dashboard:
+  refresh_interval_seconds: 2
+  max_trade_history_rows: 500
+  max_log_rows: 1000
+
+ai_analytics:
+  enabled: true
+  # Analytics-only. See docs/STRATEGY_INTEGRITY.md — this module has no
+  # write path into strategy/* and cannot alter entries, exits, or risk.
+  min_trades_for_insights: 20

@@ -1,0 +1,13 @@
+[project]
+name = "m5-reversal-bot"
+version = "1.0.0"
+description = "M5 Liquidity Reversal Playbook — production automated trading system"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+where = ["src"]

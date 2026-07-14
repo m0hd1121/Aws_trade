@@ -1,0 +1,19 @@
+# D1/D2 news filter data feed configuration (Section 2.5).
+# The RULE (blackout windows, NFP/CPI/FOMC handling) is fixed in
+# strategy/sessions.py and core/constants.py::NEWS. This file only points
+# at where the actual red-folder calendar events come from — the bot does
+# not hardcode a list of future news dates, it ingests them from a feed.
+#
+# Supported providers (implement the fetch in data/news_feed.py):
+#   - "static_file": read events from news_events.yaml below (manual/offline)
+#   - "forexfactory_csv": scheduled CSV export, poll_interval_minutes apart
+#   - "custom_api": set api_url + api_key_env
+#
+# is_red_folder / is_nfp_or_cpi / is_fomc flags on each ingested event are
+# what strategy/sessions.py::check_d1_news and check_d2_high_impact_day
+# consume — they must be provided by the feed, not inferred by the bot.
+
+provider: static_file
+static_events_file: ./config/news_events_example.yaml
+poll_interval_minutes: 15
+currencies_watched: [USD, EUR]

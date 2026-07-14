@@ -1,0 +1,47 @@
+# D5 — holiday liquidity disqualifier (Section 2.5).
+# The RULE is fixed: no trading on UK/US bank holidays, Dec 20-Jan 3
+# inclusive, Thu-Fri of US Thanksgiving week, and Thu-Fri of Good Friday
+# week. This file only supplies the calendar DATES the rule is evaluated
+# against, since bank holidays move every year — it is data, not logic.
+# Maintain annually. strategy/sessions.py::check_d5_holiday reads this file
+# and additionally auto-applies the fixed Dec 20-Jan 3 window every year.
+
+uk_us_bank_holidays_2025:
+  - "2025-01-01"  # New Year's Day
+  - "2025-01-20"  # US MLK Day
+  - "2025-02-17"  # US Presidents' Day
+  - "2025-04-18"  # Good Friday
+  - "2025-05-05"  # UK Early May Bank Holiday
+  - "2025-05-26"  # US Memorial Day / UK Spring Bank Holiday
+  - "2025-06-19"  # US Juneteenth
+  - "2025-07-04"  # US Independence Day
+  - "2025-08-25"  # UK Summer Bank Holiday
+  - "2025-09-01"  # US Labor Day
+  - "2025-11-27"  # US Thanksgiving
+  - "2025-11-28"  # Day after Thanksgiving
+  - "2025-12-25"  # Christmas Day
+  - "2025-12-26"  # Boxing Day
+
+uk_us_bank_holidays_2026:
+  - "2026-01-01"
+  - "2026-01-19"
+  - "2026-02-16"
+  - "2026-04-03"  # Good Friday
+  - "2026-05-04"
+  - "2026-05-25"
+  - "2026-06-19"
+  - "2026-07-04"
+  - "2026-08-31"
+  - "2026-09-07"
+  - "2026-11-26"  # US Thanksgiving
+  - "2026-11-27"
+  - "2026-12-25"
+  - "2026-12-26"
+
+thanksgiving_week_thu_fri:
+  - ["2025-11-27", "2025-11-28"]
+  - ["2026-11-26", "2026-11-27"]
+
+good_friday_week_thu_fri:
+  - ["2025-04-17", "2025-04-18"]
+  - ["2026-04-02", "2026-04-03"]

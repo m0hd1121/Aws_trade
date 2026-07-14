@@ -1,0 +1,27 @@
+# Core runtime
+PyYAML==6.0.2
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.6.1
+SQLAlchemy==2.0.36
+tenacity==9.0.0
+
+# API / dashboard transport
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+websockets==13.1
+python-multipart==0.0.17
+
+# Broker connectivity (Windows or Wine host only — see docs/DEPLOYMENT.md)
+MetaTrader5==5.0.4993; sys_platform == "win32"
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+
+# Structured logging
+python-json-logger==2.0.7
+
+# Optional: only needed for production Postgres deployments (see
+# docker/docker-compose.prod.yml). SQLite (the default) needs nothing extra.
+# psycopg2-binary==2.9.10

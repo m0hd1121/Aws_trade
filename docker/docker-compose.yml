@@ -1,0 +1,29 @@
+# Development / BACKTEST-and-dashboard compose file. For DEMO/LIVE trading
+# (which needs the Windows-only MetaTrader5 package), run the app directly
+# on a Windows host instead — see docs/DEPLOYMENT.md.
+
+services:
+  m5-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: m5-reversal-bot:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/m5_bot.db
+      LOG_DIR: /app/logs
+    volumes:
+      - m5-data:/app/data
+      - m5-logs:/app/logs
+      - ../config:/app/config
+      - ../data/history:/app/data/history:ro
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+
+volumes:
+  m5-data:
+  m5-logs:

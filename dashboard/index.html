@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M5 Liquidity Reversal Bot — Control Center</title>
+<link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1>M5 Liquidity Reversal Bot</h1>
+      <div class="subtitle">London &amp; New York Kill Zones · EUR/USD · XAU/USD</div>
+    </div>
+    <div class="badges">
+      <span class="badge" id="badge-mode">MODE —</span>
+      <span class="badge" id="badge-state">STATE —</span>
+      <span class="badge"><span class="dot" id="dot-ws"></span> <span id="ws-label">connecting…</span></span>
+      <span class="badge"><span class="dot" id="dot-feed"></span> Feed</span>
+      <span class="badge"><span class="dot" id="dot-adapter"></span> Broker</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <button class="primary" id="btn-start">▶ Start Bot</button>
+    <button id="btn-pause">⏸ Pause</button>
+    <button id="btn-resume">⏵ Resume</button>
+    <button id="btn-stop">■ Stop Bot</button>
+    <button id="btn-restart">⟲ Restart</button>
+    <button id="btn-reset">⟳ Reset Session</button>
+    <button id="btn-refresh">⟳ Manual Refresh</button>
+    <button id="btn-config">⚙ Configuration</button>
+    <button class="danger" id="btn-emergency">⛔ EMERGENCY STOP</button>
+  </div>
+
+  <div class="grid">
+
+    <section class="card span-4">
+      <h2>Strategy Execution — What The Bot Is Doing</h2>
+      <div id="stage-panel"><div class="empty">No engine data yet.</div></div>
+    </section>
+
+    <section class="card span-4">
+      <h2>Account</h2>
+      <div class="stat-row" id="account-panel">
+        <div class="stat-tile"><div class="value" id="acct-equity">—</div><div class="label">Equity</div></div>
+        <div class="stat-tile"><div class="value" id="acct-sod">—</div><div class="label">Start-of-day equity</div></div>
+        <div class="stat-tile"><div class="value" id="acct-daily">—</div><div class="label">Daily loss %</div></div>
+        <div class="stat-tile"><div class="value" id="acct-weekly">—</div><div class="label">Weekly loss %</div></div>
+      </div>
+    </section>
+
+    <section class="card span-4">
+      <h2>Risk Metrics</h2>
+      <div class="stat-row" id="risk-panel">
+        <div class="stat-tile"><div class="value" id="risk-consec">—</div><div class="label">Consecutive losses (running)</div></div>
+        <div class="stat-tile"><div class="value" id="risk-today">—</div><div class="label">Trades today</div></div>
+        <div class="stat-tile"><div class="value" id="risk-recovery">—</div><div class="label">Recovery mode (0.5% risk)</div></div>
+        <div class="stat-tile"><div class="value" id="risk-brake">—</div><div class="label">Monthly brake</div></div>
+      </div>
+    </section>
+
+    <section class="card span-8">
+      <h2>Equity Curve (Cumulative R) &amp; Drawdown</h2>
+      <div class="chart-wrap" id="chart-wrap">
+        <svg class="chart" id="equity-chart" width="100%" height="220" viewBox="0 0 760 220" preserveAspectRatio="none"></svg>
+        <div class="chart-tooltip" id="chart-tooltip"></div>
+      </div>
+    </section>
+
+    <section class="card span-4">
+      <h2>Performance vs. Rulebook Profile (Sec. 12)</h2>
+      <div class="stat-row" id="perf-panel">
+        <div class="stat-tile"><div class="value" id="perf-trades">—</div><div class="label">Closed trades</div></div>
+        <div class="stat-tile"><div class="value" id="perf-winrate">—</div><div class="label">Win rate (target 35–45%)</div></div>
+        <div class="stat-tile"><div class="value" id="perf-expectancy">—</div><div class="label">Expectancy R (target 0.25–0.45)</div></div>
+        <div class="stat-tile"><div class="value" id="perf-compliance">—</div><div class="label">Rule compliance rate</div></div>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>Open Positions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Instrument</th><th>Dir</th><th>Volume</th><th>Open</th><th>Stop</th><th>TP</th><th>Unrealized</th></tr></thead>
+          <tbody id="positions-body"><tr><td colspan="7" class="empty">No open positions.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>Closed Trades</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Instrument</th><th>Session</th><th>Dir</th><th>Entry</th><th>Exit</th><th>Reason</th><th>R</th><th>Compliant</th></tr></thead>
+          <tbody id="trades-body"><tr><td colspan="8" class="empty">No closed trades yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>Scored Skips</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Instrument</th><th>Session</th><th>Reason</th></tr></thead>
+          <tbody id="skips-body"><tr><td colspan="4" class="empty">No skips logged yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>System Health &amp; Connection Status</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Status</th><th>Latency</th><th>Detail</th><th>Last seen</th></tr></thead>
+          <tbody id="health-body"><tr><td colspan="5" class="empty">No health data yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>Strategy Execution Log (Stage Transitions)</h2>
+      <div class="log-list" id="stage-log"><div class="empty">Waiting for events…</div></div>
+    </section>
+
+    <section class="card span-6">
+      <h2>System Logs</h2>
+      <div class="log-list" id="system-log"><div class="empty">Waiting for events…</div></div>
+    </section>
+
+    <section class="card span-12">
+      <h2>AI Insights (Analytics Only — Never Alters Strategy Rules)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Category</th><th>Metric</th><th>Value</th><th>Detail</th></tr></thead>
+          <tbody id="ai-body"><tr><td colspan="5" class="empty">No AI insights yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="footer-note">Strategy logic is frozen and hash-verified against docs/strategy/M5_Liquidity_Reversal_Playbook.md at every bot startup. This dashboard cannot modify a strategy rule.</div>
+</div>
+
+<div class="modal-backdrop" id="config-modal">
+  <div class="modal">
+    <h3>Configuration Management</h3>
+    <p class="empty" style="margin-top:-6px">Operational settings only — mode, instruments, poll cadence. Strategy rule numbers are frozen and not editable here.</p>
+    <textarea id="config-text"></textarea>
+    <div class="modal-actions">
+      <button id="config-cancel">Cancel</button>
+      <button class="primary" id="config-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
