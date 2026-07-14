@@ -44,6 +44,9 @@ inside a separate container.
 
 ## All-Linux via the mt5linux bridge
 
+Full details, architecture diagram, build-arg customization, and
+troubleshooting live in [`docker/mt5-bridge/README.md`](../docker/mt5-bridge/README.md) — this section is the short version.
+
 One command from the repo root:
 
 ```bash
