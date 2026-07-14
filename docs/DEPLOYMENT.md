@@ -44,22 +44,32 @@ inside a separate container.
 
 ## All-Linux via the mt5linux bridge
 
+One command from the repo root:
+
+```bash
+./setup.sh
+```
+
+This copies `.env.example` → `.env` if missing, forces
+`MT5_BRIDGE_MODE`/`HOST`/`PORT` to match the compose topology
+(`mt5-bridge` on the internal Docker network), and runs both compose
+files together (`docker-compose.yml` + `docker-compose.mt5-bridge.yml`)
+with `--build`. It does **not** need your MT5 credentials to run —
+those are entered afterward from the dashboard's **Broker Connection**
+panel (`http://localhost:8000`), which talks to the MT5 API directly via
+`initialize()`/`login()` calls — no GUI/VNC step, in local mode or
+bridge mode. `./setup.sh --no-bridge` skips the Wine image if you only
+need BACKTEST/dashboard, or already reach MT5 some other way.
+
+Equivalent by hand, if you'd rather not run the script:
+
 ```bash
 cd docker
 cp ../.env.example ../.env
-# edit .env: MT5_LOGIN/MT5_PASSWORD/MT5_SERVER, and set:
-#   MT5_BRIDGE_MODE=mt5linux
-#   MT5_BRIDGE_HOST=mt5-bridge
-#   MT5_BRIDGE_PORT=8001
+# edit .env: MT5_BRIDGE_MODE=mt5linux, MT5_BRIDGE_HOST=mt5-bridge, MT5_BRIDGE_PORT=8001
 docker compose -f docker-compose.yml -f docker-compose.mt5-bridge.yml up -d --build
 docker compose logs -f mt5-bridge     # first build takes a while — Wine + MT5 + a Python install, all inside the image
 ```
-
-Credentials can also be entered (or changed) live from the dashboard's
-**Broker Connection** panel instead of editing `.env` — see
-`docs/API.md`. Either way, login happens purely through
-`initialize()`/`login()` API calls; nothing here scripts a GUI click, in
-local mode or bridge mode.
 
 **Be honest with yourself about this path before committing to it:**
 

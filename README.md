@@ -41,7 +41,26 @@ mechanism and what to do if the strategy legitimately needs to change.
   that replays a hand-built trading day through the real engine from
   sweep to fill to TP1/break-even to hard-flat close.
 
-## Quick start (backtest + dashboard, any platform)
+## Quick start — one command (Linux, all-in, no Wine on your host)
+
+```bash
+./setup.sh
+```
+
+Builds and starts the app **and** a Dockerized Wine+MT5 bridge
+(`docker/mt5-bridge/`) together, so PAPER/DEMO/LIVE trading works on a
+plain Linux VPS with zero Wine installed on it directly. Open
+`http://localhost:8000`, enter your MT5 login/password/server in the
+dashboard's **Broker Connection** panel (talks to the MT5 API directly —
+no GUI/VNC step), then click Start Bot. First build is slow (Wine + the
+MT5 terminal + a Python install, all inside the bridge image — often
+15-30+ minutes); everything after that is fast.
+
+Just want BACKTEST + the dashboard, or already running MT5 elsewhere
+(Windows VPS, `bridge_mode=local`)? `./setup.sh --no-bridge` skips the
+Wine image entirely.
+
+## Quick start — manual (backtest + dashboard, any platform)
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
@@ -59,10 +78,9 @@ python scripts/run_backtest.py --instruments EURUSD,XAUUSD \
     --start 2024-01-01 --end 2024-12-31 --data-dir ./data/history
 ```
 
-For **DEMO/LIVE** trading you need a Windows host (the MetaTrader5 python
-package only ships Windows wheels) — see
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full platform story,
-Docker instructions, and resource footprint notes.
+For DEMO/LIVE without Docker you need a Windows host, or Wine on this
+one (`bridge_mode=local`) — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+for the full platform story and resource footprint notes.
 
 ```bash
 python scripts/run_paper.py   # simulated fills, real prices, no real orders
