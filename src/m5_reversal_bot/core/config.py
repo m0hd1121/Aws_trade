@@ -28,6 +28,23 @@ class MT5Settings(BaseSettings):
     terminal_path: str | None = None  # path to terminal64.exe, MT5 python API still connects via IPC, no manual UI use
     timeout_ms: int = 10_000
 
+    # bridge_mode="local": the real MetaTrader5 package, running alongside
+    # this process (Windows, or Wine on the same host).
+    # bridge_mode="mt5linux": talk to a remote MT5 terminal (typically a
+    # Dockerized Wine container) over the mt5linux RPyC bridge instead —
+    # see docker/docker-compose.mt5-bridge.yml and docs/DEPLOYMENT.md.
+    # Login still happens purely via initialize()/login() API calls in
+    # both modes; no GUI interaction is scripted either way.
+    bridge_mode: Literal["local", "mt5linux"] = "local"
+    bridge_host: str = "127.0.0.1"
+    bridge_port: int = 8001
+
+    # These fields are mutated live by POST /api/bot/broker-connect (see
+    # api/routes_bot.py) so an operator can (re)connect from the dashboard
+    # without editing .env and restarting the process. Mutating this same
+    # object in place is what makes that take effect: MT5MarketDataFeed /
+    # MT5ExecutionAdapter hold a reference to it, not a copy.
+
 
 class AppSettings(BaseSettings):
     """Loaded from environment / .env. Broker credentials never touch YAML."""
@@ -41,6 +58,14 @@ class AppSettings(BaseSettings):
     log_dir: str = "./logs"
     news_calendar_path: str = "./config/news_calendar.yaml"
     holiday_calendar_path: str = "./config/holidays.yaml"
+
+    # Optional HTTP Basic Auth in front of the whole dashboard + API — see
+    # api/auth.py. Blank (the default) leaves the app open, matching the
+    # "put it behind your own VPN/reverse proxy" guidance in
+    # docs/DEPLOYMENT.md. Set both once you start entering real broker
+    # credentials through the Broker Connection panel.
+    dashboard_username: str = ""
+    dashboard_password: str = ""
 
     mt5: MT5Settings = Field(default_factory=MT5Settings)
 

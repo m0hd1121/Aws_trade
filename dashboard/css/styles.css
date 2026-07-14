@@ -204,3 +204,22 @@ textarea { width: 100%; min-height: 260px; font-family: ui-monospace, monospace;
 
 .empty { color: var(--text-muted); font-size: 12px; padding: 12px 0; }
 .footer-note { color: var(--text-muted); font-size: 11px; margin-top: 24px; text-align: center; }
+
+/* ---------------------------------------------------------- broker form */
+.broker-form { display: flex; flex-direction: column; gap: 10px; }
+.broker-row { display: flex; flex-direction: column; gap: 4px; }
+.broker-row label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.broker-form input, .broker-form select {
+  font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-primary); width: 100%;
+}
+.broker-form input:focus, .broker-form select:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.broker-bridge-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.broker-bridge-fields > div { display: flex; flex-direction: column; gap: 4px; }
+.broker-bridge-fields label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.broker-actions { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.broker-status { font-size: 12px; font-weight: 600; }
+.broker-status.ok { color: var(--status-good); }
+.broker-status.bad { color: var(--status-critical); }
+.broker-status.pending { color: var(--text-muted); }
+.broker-note { color: var(--text-muted); font-size: 11px; margin-top: 10px; line-height: 1.5; }

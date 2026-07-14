@@ -38,6 +38,46 @@
   <div class="grid">
 
     <section class="card span-4">
+      <h2>Broker Connection</h2>
+      <form id="broker-form" class="broker-form">
+        <div class="broker-row">
+          <label for="broker-login">Login</label>
+          <input type="text" inputmode="numeric" id="broker-login" placeholder="12345678" autocomplete="off" />
+        </div>
+        <div class="broker-row">
+          <label for="broker-password">Password</label>
+          <input type="password" id="broker-password" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+        <div class="broker-row">
+          <label for="broker-server">Server</label>
+          <input type="text" id="broker-server" placeholder="YourBroker-Demo" autocomplete="off" />
+        </div>
+        <div class="broker-row">
+          <label for="broker-bridge-mode">Bridge mode</label>
+          <select id="broker-bridge-mode">
+            <option value="local">local (Windows/Wine on this host)</option>
+            <option value="mt5linux">mt5linux (remote Wine bridge container)</option>
+          </select>
+        </div>
+        <div class="broker-bridge-fields" id="broker-bridge-fields" style="display:none">
+          <div>
+            <label for="broker-bridge-host">Bridge host</label>
+            <input type="text" id="broker-bridge-host" placeholder="mt5-bridge" autocomplete="off" />
+          </div>
+          <div>
+            <label for="broker-bridge-port">Bridge port</label>
+            <input type="text" inputmode="numeric" id="broker-bridge-port" placeholder="8001" autocomplete="off" />
+          </div>
+        </div>
+        <div class="broker-actions">
+          <button type="submit" class="primary" id="broker-connect-btn">Connect</button>
+          <span id="broker-status" class="broker-status"></span>
+        </div>
+      </form>
+      <div class="broker-note">Credentials are sent once to authenticate via the MT5 API's own initialize()/login() calls — no terminal GUI is opened or scripted. Testing a connection with the bot stopped can take up to ~30s to report failure (connection retries).</div>
+    </section>
+
+    <section class="card span-4">
       <h2>Strategy Execution — What The Bot Is Doing</h2>
       <div id="stage-panel"><div class="empty">No engine data yet.</div></div>
     </section>

@@ -16,16 +16,19 @@ from ..core.config import REPO_ROOT, app_settings
 from ..monitoring.logger import configure_logging
 from ..persistence import db as db_module
 from . import routes_bot, routes_config, routes_dashboard, websocket
+from .auth import BasicAuthASGIMiddleware, warn_if_auth_disabled
 from .state import get_controller
 
 configure_logging(app_settings.log_dir, app_settings.log_level)
 db_module.init_db()
+warn_if_auth_disabled()
 
 app = FastAPI(title="M5 Liquidity Reversal Bot", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+app.add_middleware(BasicAuthASGIMiddleware)
 
 app.include_router(routes_bot.router, prefix="/api/bot", tags=["bot"])
 app.include_router(routes_dashboard.router, prefix="/api/dashboard", tags=["dashboard"])

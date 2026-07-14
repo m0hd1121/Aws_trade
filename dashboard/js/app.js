@@ -55,6 +55,50 @@
     }
   });
 
+  // ---------------------------------------------------------------- broker connection
+  const bridgeModeSelect = $("broker-bridge-mode");
+  const bridgeFields = $("broker-bridge-fields");
+  function syncBridgeFieldsVisibility() {
+    bridgeFields.style.display = bridgeModeSelect.value === "mt5linux" ? "grid" : "none";
+  }
+  bridgeModeSelect.addEventListener("change", syncBridgeFieldsVisibility);
+  syncBridgeFieldsVisibility();
+
+  $("broker-form").addEventListener("submit", async (evt) => {
+    evt.preventDefault();
+    const statusEl = $("broker-status");
+    const btn = $("broker-connect-btn");
+    const body = {};
+    const login = $("broker-login").value.trim();
+    const password = $("broker-password").value;
+    const server = $("broker-server").value.trim();
+    if (login) body.login = parseInt(login, 10);
+    if (password) body.password = password;
+    if (server) body.server = server;
+    body.bridge_mode = bridgeModeSelect.value;
+    if (bridgeModeSelect.value === "mt5linux") {
+      const host = $("broker-bridge-host").value.trim();
+      const port = $("broker-bridge-port").value.trim();
+      if (host) body.bridge_host = host;
+      if (port) body.bridge_port = parseInt(port, 10);
+    }
+
+    btn.disabled = true;
+    statusEl.className = "broker-status pending";
+    statusEl.textContent = "Connecting… (can take up to ~30s)";
+    try {
+      const result = await postJSON("/bot/broker-connect", body);
+      statusEl.className = "broker-status " + (result.success ? "ok" : "bad");
+      statusEl.textContent = result.message;
+      $("broker-password").value = "";
+    } catch (e) {
+      statusEl.className = "broker-status bad";
+      statusEl.textContent = "Request failed: " + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   // ---------------------------------------------------------------- config modal
   $("btn-config").addEventListener("click", async () => {
     const cfg = await getJSON("/config/");

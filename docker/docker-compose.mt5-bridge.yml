@@ -1,0 +1,40 @@
+# Overlay adding a Wine+MT5+mt5linux bridge container, so the main app
+# stays on plain Linux with zero Wine installed on its own host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.mt5-bridge.yml up -d --build
+#
+# See docker/mt5-bridge/Dockerfile for the honest caveats on this path —
+# it's real, but more fragile than a plain Windows VPS. docs/DEPLOYMENT.md
+# has the full tradeoff table.
+
+services:
+  m5-bot:
+    environment:
+      MT5_BRIDGE_MODE: mt5linux
+      MT5_BRIDGE_HOST: mt5-bridge
+      MT5_BRIDGE_PORT: "8001"
+    depends_on:
+      - mt5-bridge
+
+  mt5-bridge:
+    build:
+      context: ./mt5-bridge
+      # Point this at your OWN broker's MT5 installer URL if they provide
+      # one (most do, to preselect their server list in the terminal).
+      args:
+        MT5_SETUP_URL: ${MT5_SETUP_URL:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}
+    image: m5-mt5-bridge:latest
+    environment:
+      MT5LINUX_PORT: "8001"
+    volumes:
+      - mt5-wine-prefix:/root/.wine
+    # No host port published by default — only the m5-bot container on the
+    # compose network needs to reach it. Uncomment to debug directly:
+    # ports:
+    #   - "8001:8001"
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+
+volumes:
+  mt5-wine-prefix:

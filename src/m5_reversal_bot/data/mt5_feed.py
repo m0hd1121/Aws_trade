@@ -1,16 +1,20 @@
-"""Live/demo market data via the official `MetaTrader5` python package.
+"""Live/demo market data via the official `MetaTrader5` python package —
+or, in `bridge_mode="mt5linux"`, via a remote MT5 terminal (typically a
+Dockerized Wine container) reached over the `mt5linux` RPyC bridge.
 
-This talks directly to the broker's trade server through the locally
-installed MT5 terminal's IPC channel — it is the MT5 **API**, not the
-desktop terminal UI. No manual clicking, no terminal automation, no
-screen-scraping. `MetaTrader5.initialize()` starts (or attaches to) the
-terminal process purely as a local execution/data bridge; a human never
-interacts with it.
+Either way this is the MT5 **API**, not the desktop terminal UI: no
+manual clicking, no terminal automation, no screen-scraping.
+`initialize()`/`login()` drive the terminal purely as a data/execution
+bridge; a human never interacts with it, in local mode or bridge mode.
 
-The `MetaTrader5` package only ships prebuilt wheels for Windows. In
-production this module runs on a Windows host or under Wine — see
-docs/DEPLOYMENT.md. Import is deferred so the rest of the codebase (and
-its test suite) can run on any platform without it installed.
+The real `MetaTrader5` package only ships prebuilt wheels for Windows —
+`bridge_mode="local"` needs a Windows host or Wine on THIS machine. The
+`mt5linux` client has no such restriction (it's pure-Python RPyC), which
+is what lets `bridge_mode="mt5linux"` run on a plain Linux box talking to
+a separate container that owns the Wine/MT5 side — see
+docker/docker-compose.mt5-bridge.yml and docs/DEPLOYMENT.md. Import is
+deferred either way so the rest of the codebase (and its test suite) can
+run without either package installed.
 """
 
 from __future__ import annotations
@@ -41,22 +45,37 @@ class MT5MarketDataFeed(MarketDataFeed):
 
     def _import_mt5(self):
         if self._mt5 is None:
-            try:
-                import MetaTrader5 as mt5  # noqa: N814
-            except ImportError as e:
-                raise MT5ConnectionError(
-                    "MetaTrader5 python package is not installed/available on this "
-                    "platform. It only ships Windows wheels — run this feed on a "
-                    "Windows host or under Wine. See docs/DEPLOYMENT.md."
-                ) from e
-            self._mt5 = mt5
+            if self._settings.bridge_mode == "mt5linux":
+                try:
+                    from mt5linux import MetaTrader5 as _MT5Bridge
+                except ImportError as e:
+                    raise MT5ConnectionError(
+                        "mt5linux package is not installed. Run `pip install mt5linux` "
+                        "and point MT5_BRIDGE_HOST/MT5_BRIDGE_PORT at the Wine+MT5 "
+                        "bridge container — see docker/docker-compose.mt5-bridge.yml."
+                    ) from e
+                self._mt5 = _MT5Bridge(host=self._settings.bridge_host, port=self._settings.bridge_port)
+            else:
+                try:
+                    import MetaTrader5 as mt5  # noqa: N814
+                except ImportError as e:
+                    raise MT5ConnectionError(
+                        "MetaTrader5 python package is not installed/available on this "
+                        "platform. It only ships Windows wheels — run this feed on a "
+                        "Windows host or under Wine, or set MT5_BRIDGE_MODE=mt5linux to "
+                        "talk to a remote bridge instead. See docs/DEPLOYMENT.md."
+                    ) from e
+                self._mt5 = mt5
         return self._mt5
 
     @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=2, max=16))
     def connect(self) -> None:
         mt5 = self._import_mt5()
         kwargs = {}
-        if self._settings.terminal_path:
+        # `path` is a local Windows filesystem path — meaningless for a
+        # remote mt5linux bridge, whose terminal path is fixed inside its
+        # own container.
+        if self._settings.bridge_mode == "local" and self._settings.terminal_path:
             kwargs["path"] = self._settings.terminal_path
         if not mt5.initialize(**kwargs):
             raise MT5ConnectionError(f"MT5 initialize() failed: {mt5.last_error()}")

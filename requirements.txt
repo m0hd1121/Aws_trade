@@ -12,8 +12,13 @@ uvicorn[standard]==0.32.1
 websockets==13.1
 python-multipart==0.0.17
 
-# Broker connectivity (Windows or Wine host only — see docs/DEPLOYMENT.md)
+# Broker connectivity — pick one path, see docs/DEPLOYMENT.md:
+#  - local: the real MetaTrader5 package, Windows/Wine host only.
+#  - mt5linux: pure-Python RPyC client, works on Linux, talks to a remote
+#    Wine+MT5 container (docker/docker-compose.mt5-bridge.yml). Set
+#    MT5_BRIDGE_MODE=mt5linux and install this on the Linux side.
 MetaTrader5==5.0.4993; sys_platform == "win32"
+mt5linux==0.1.9
 
 # Testing
 pytest==8.3.3

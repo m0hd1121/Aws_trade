@@ -1,11 +1,14 @@
 """Live/demo order execution via the official `MetaTrader5` python package
-(`mt5.order_send`, `mt5.positions_get`, etc.) — the MT5 **API**, talking to
-the broker's trade server through the local terminal's IPC channel. This
-adapter never opens or clicks anything in the desktop terminal UI; the
-terminal process only exists as MT5's local execution bridge. The same
-adapter class serves both DEMO and LIVE modes — the account credentials
-(and therefore whether it's a demo or funded account) come entirely from
-which MT5 login the settings point at (see .env / MT5_LOGIN).
+(`mt5.order_send`, `mt5.positions_get`, etc.) — or, in
+`bridge_mode="mt5linux"`, the same calls proxied to a remote MT5 terminal
+over the `mt5linux` RPyC bridge (see data/mt5_feed.py for the full
+rationale). Either way this is the MT5 **API**, talking to the broker's
+trade server through the terminal's IPC channel; nothing here ever opens
+or clicks anything in a desktop terminal UI. The same adapter class
+serves both DEMO and LIVE modes — the account credentials (and therefore
+whether it's a demo or funded account) come entirely from which MT5
+login the settings point at (see .env / MT5_LOGIN, or POST
+/api/bot/broker-connect for live updates from the dashboard).
 """
 
 from __future__ import annotations
@@ -32,14 +35,26 @@ class MT5ExecutionAdapter(ExecutionAdapter):
 
     def _import_mt5(self):
         if self._mt5 is None:
-            try:
-                import MetaTrader5 as mt5  # noqa: N814
-            except ImportError as e:
-                raise MT5AdapterError(
-                    "MetaTrader5 python package unavailable — Windows/Wine host required. "
-                    "See docs/DEPLOYMENT.md."
-                ) from e
-            self._mt5 = mt5
+            if self._settings.bridge_mode == "mt5linux":
+                try:
+                    from mt5linux import MetaTrader5 as _MT5Bridge
+                except ImportError as e:
+                    raise MT5AdapterError(
+                        "mt5linux package is not installed. Run `pip install mt5linux` "
+                        "and point MT5_BRIDGE_HOST/MT5_BRIDGE_PORT at the Wine+MT5 "
+                        "bridge container — see docker/docker-compose.mt5-bridge.yml."
+                    ) from e
+                self._mt5 = _MT5Bridge(host=self._settings.bridge_host, port=self._settings.bridge_port)
+            else:
+                try:
+                    import MetaTrader5 as mt5  # noqa: N814
+                except ImportError as e:
+                    raise MT5AdapterError(
+                        "MetaTrader5 python package unavailable — Windows/Wine host required, "
+                        "or set MT5_BRIDGE_MODE=mt5linux to talk to a remote bridge instead. "
+                        "See docs/DEPLOYMENT.md."
+                    ) from e
+                self._mt5 = mt5
         return self._mt5
 
     def _symbol(self, instrument: Instrument) -> str:
@@ -48,7 +63,9 @@ class MT5ExecutionAdapter(ExecutionAdapter):
     @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=2, max=16))
     def connect(self) -> None:
         mt5 = self._import_mt5()
-        kwargs = {"path": self._settings.terminal_path} if self._settings.terminal_path else {}
+        kwargs = {}
+        if self._settings.bridge_mode == "local" and self._settings.terminal_path:
+            kwargs["path"] = self._settings.terminal_path
         if not mt5.initialize(**kwargs):
             raise MT5AdapterError(f"MT5 initialize() failed: {mt5.last_error()}")
         if self._settings.login and self._settings.password and self._settings.server:
