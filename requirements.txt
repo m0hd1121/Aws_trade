@@ -16,9 +16,21 @@ python-multipart==0.0.17
 #  - local: the real MetaTrader5 package, Windows/Wine host only.
 #  - mt5linux: pure-Python RPyC client, works on Linux, talks to a remote
 #    Wine+MT5 container (docker/docker-compose.mt5-bridge.yml). Set
-#    MT5_BRIDGE_MODE=mt5linux and install this on the Linux side.
+#    MT5_BRIDGE_MODE=mt5linux.
 MetaTrader5==5.0.4993; sys_platform == "win32"
-mt5linux==0.1.9
+
+# mt5linux==0.1.9's own declared dependencies pin numpy==1.21.4 and
+# cryptography==35.0.0 (no prebuilt wheel for modern Python; source builds
+# fail without a compiler toolchain, and numpy 1.21 predates official
+# Python 3.11 support anyway) plus a pile of unrelated packaging-tool
+# pins (twine/keyring/docutils/etc.) that have nothing to do with its
+# runtime use — looks like an accidental full dev-environment freeze in
+# their setup.py, not real requirements. It's installed with --no-deps in
+# docker/Dockerfile; these two are its only *actual* runtime needs
+# (verified: `from mt5linux import MetaTrader5` imports and constructs
+# cleanly against these versions).
+numpy==1.26.4
+rpyc==5.3.1
 
 # Testing
 pytest==8.3.3

@@ -1,7 +1,8 @@
-# Linux image: API + dashboard + BACKTEST/PAPER-analysis workloads.
-# DEMO/LIVE trading needs the MetaTrader5 python package, which only ships
-# Windows wheels — run those modes on a Windows host (bare metal, VM, or
-# Windows container). See docs/DEPLOYMENT.md.
+# Linux image: API + dashboard + BACKTEST/PAPER-analysis workloads, and
+# PAPER/DEMO/LIVE when paired with the mt5linux bridge (docker-compose.
+# mt5-bridge.yml) — otherwise DEMO/LIVE need a Windows host directly, since
+# the real MetaTrader5 python package only ships Windows wheels. See
+# docs/DEPLOYMENT.md.
 
 FROM python:3.11-slim AS base
 
@@ -19,6 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# --no-deps: mt5linux's own declared dependencies are broken on modern
+# Python (numpy==1.21.4 has no wheel for cp311+) and mostly irrelevant to
+# its actual runtime use anyway — see the comment in requirements.txt.
+# numpy/rpyc above are its real needs, installed at compatible versions.
+RUN pip install --no-cache-dir --no-deps mt5linux==0.1.9
 
 COPY src ./src
 COPY config ./config
