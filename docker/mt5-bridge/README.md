@@ -100,6 +100,18 @@ MT5_SETUP_URL=https://your-broker.com/mt5setup.exe \
 - **Wine crashes / the bridge stops responding.** `docker compose
   restart mt5-bridge`. The Wine prefix (terminal + settings) persists in
   the `mt5-wine-prefix` volume, so a restart doesn't repeat the install.
+- **Build fails on `wine wineboot --init`** with `boot event wait timed
+  out` / `could not load kernel32.dll, status c0000135`. This is Wine's
+  own prefix-initialization handshake failing, not an MT5 problem — seen
+  in practice on very small hosts (1 vCPU / 1GB RAM) where the handshake
+  races CPU contention from the rest of the build. The Dockerfile already
+  retries this step 3x and waits for Xvfb to actually accept connections
+  (not a fixed sleep) before touching Wine, which resolves it on most
+  hosts. If it still fails: give the build more headroom — stop other
+  containers during the build, add swap (`fallocate -l 2G /swapfile &&
+  chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`), or build
+  on a larger machine and just ship the resulting image / `mt5-wine-prefix`
+  volume to the small host.
 
 ## Honest limitations
 

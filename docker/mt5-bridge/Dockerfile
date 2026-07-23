@@ -19,12 +19,19 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     WINEARCH=win64 \
     WINEPREFIX=/root/.wine \
+    WINEDEBUG=fixme-all \
     DISPLAY=:99
 
 # --- Wine (WineHQ's own packages, not Debian's older bundled ones) ---
+# dbus-x11 + x11-utils are here specifically because their absence is a
+# common cause of "boot event wait timed out" / "could not load
+# kernel32.dll" failures on `wineboot --init` in minimal containers —
+# some of Wine's service emulation expects a session bus to exist, and
+# xdpyinfo lets the steps below actually confirm Xvfb is accepting
+# connections instead of guessing with a fixed sleep.
 RUN dpkg --add-architecture i386 && \
     apt-get update && apt-get install -y --no-install-recommends \
-        wget gnupg2 ca-certificates xvfb winbind cabextract unzip \
+        wget gnupg2 ca-certificates xvfb winbind cabextract unzip dbus-x11 x11-utils \
     && mkdir -pm755 /etc/apt/keyrings && \
     wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
     wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources && \
@@ -35,10 +42,30 @@ RUN dpkg --add-architecture i386 && \
 RUN wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks && \
     chmod +x /usr/local/bin/winetricks
 
-# --- Initialize the Wine prefix and required runtimes ---
-RUN Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 4 && \
-    wine wineboot --init && \
+# Shared helper: start Xvfb and actually wait for it to accept connections
+# (xdpyinfo) instead of a blind `sleep N`, which is the other half of what
+# makes wineboot's internal boot-event handshake flaky on a slow/single-vCPU
+# host — if Wine starts talking to a display that isn't ready yet, later
+# steps see exactly the "failed to marshal"/"boot event timed out" errors
+# from this issue.
+COPY start-xvfb.sh /usr/local/bin/start-xvfb.sh
+RUN chmod +x /usr/local/bin/start-xvfb.sh
+
+# --- Initialize the Wine prefix (its own layer: if winetricks below fails,
+# a retry doesn't have to redo this part too — and wineboot itself gets a
+# few attempts, since its boot-event handshake can be flaky under CPU
+# contention on a single-vCPU host rather than being a permanent failure). ---
+RUN /usr/local/bin/start-xvfb.sh && \
+    for attempt in 1 2 3; do \
+        wine wineboot --init && break; \
+        echo "wineboot --init attempt ${attempt} failed, retrying..." >&2; \
+        wineserver -k || true; \
+        sleep 5; \
+    done && \
+    wineserver -w
+
+# --- Fonts + VC++ runtime MT5's UI needs to actually run ---
+RUN /usr/local/bin/start-xvfb.sh && \
     winetricks -q corefonts vcrun2019 && \
     wineserver -w
 
@@ -47,8 +74,7 @@ RUN Xvfb :99 -screen 0 1024x768x16 & \
 # (many require it, to preselect their server list) — the generic
 # MetaQuotes installer works for brokers using the shared MT5 network.
 ARG MT5_SETUP_URL=https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe
-RUN Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 4 && \
+RUN /usr/local/bin/start-xvfb.sh && \
     wget -O /root/mt5setup.exe "${MT5_SETUP_URL}" && \
     wine /root/mt5setup.exe /auto && \
     sleep 20 && \
@@ -57,16 +83,14 @@ RUN Xvfb :99 -screen 0 1024x768x16 & \
 
 # --- Wine-side Python + the real MetaTrader5 package + mt5linux server ---
 ARG WINE_PYTHON_URL=https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
-RUN Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 4 && \
+RUN /usr/local/bin/start-xvfb.sh && \
     wget -O /root/python-installer.exe "${WINE_PYTHON_URL}" && \
     wine /root/python-installer.exe /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 && \
     sleep 10 && \
     wineserver -w && \
     rm -f /root/python-installer.exe
 
-RUN Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 4 && \
+RUN /usr/local/bin/start-xvfb.sh && \
     wine python -m pip install --no-cache-dir MetaTrader5 mt5linux && \
     wineserver -w
 
