@@ -148,8 +148,55 @@ state is: one Python process, SQLite (or a small Postgres), and a
 handful of MB of rolling M5/H1 candle buffers per instrument
 (`data/candle_aggregator.py` caps each instrument's window at ~4500 M5 /
 500 H1 / 200 H4 candles). Expect well under 200MB RSS and negligible CPU
-between candle closes; `docker-compose.yml` caps the container at 512MB /
-1 CPU as a sane default, `docker-compose.prod.yml` at 384MB / 0.75 CPU.
+between candle closes; `docker-compose.yml` caps the `m5-bot` container at
+320MB / 1 CPU as a sane default, `docker-compose.prod.yml` at 384MB /
+0.75 CPU.
+
+### Running the mt5linux bridge on a 1GB host
+
+The bridge is the expensive part — Wine plus a real MT5 terminal plus a
+second Wine-side Python realistically run in 400-700MB, not the tens of
+MB the app itself needs. On a 1GB droplet there is close to zero margin
+once you add it up:
+
+| Component | Budget |
+|---|---|
+| OS + Docker daemon | ~150-250MB |
+| `m5-bot` container | 320MB cap (`docker-compose.yml`) |
+| `mt5-bridge` container | 700MB cap (`docker-compose.mt5-bridge.yml`) |
+| **Total** | **~1.2-1.3GB against 1GB physical** |
+
+That's a deficit by design, covered by swap rather than physical RAM —
+swap absorbs the *bursts* (the bridge image's build, and the MT5
+terminal's own startup), it isn't meant to carry sustained working set
+(active swapping is slow and will make candle processing lag). `./setup.sh`
+now provisions a 2GB swap file automatically on low-RAM hosts with none
+active; to do it by hand:
+
+```bash
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && \
+  sudo mkswap /swapfile && sudo swapon /swapfile && \
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo sysctl -w vm.swappiness=10   # prefer RAM, but don't refuse to use swap
+```
+
+Two more things `./setup.sh` does for the same reason:
+
+- Builds `m5-bot` and `mt5-bridge` **sequentially**, not via `--build`'s
+  default parallel buildx bake — building both at once roughly doubles
+  peak build-time RAM (pip wheel builds alongside apt-get/Wine/winetricks)
+  and is what OOM-killed an earlier attempt of this on a 512MB host.
+- Runs the bridge container with `WINEDEBUG=-all` (the Dockerfile's own
+  build-time default stays `fixme-all`, useful if a rebuild needs
+  debugging) — Wine's fixme/warn logging isn't free, and on a slow
+  `wineboot` it was visibly spinning on OLE/RPC warning noise, i.e. CPU a
+  small host doesn't have to spare.
+
+If the bridge still won't build reliably even with these in place, the
+most honest fix is to stop asking a 1GB box to do it: build the
+`m5-mt5-bridge` image (or just run the build) on a bigger machine once,
+`docker save`/`docker load` it onto the droplet, and let the small host
+only ever *run* the containers, never build them.
 
 ## Environment variables
 

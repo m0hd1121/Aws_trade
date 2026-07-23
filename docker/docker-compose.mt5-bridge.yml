@@ -26,6 +26,12 @@ services:
     image: m5-mt5-bridge:latest
     environment:
       MT5LINUX_PORT: "8001"
+      # -all silences Wine's fixme/warn channel noise at runtime (the
+      # Dockerfile's build-time default of fixme-all stays in the image for
+      # troubleshooting a rebuild) — that logging isn't free: on the OLE/RPC
+      # noise seen during a slow wineboot, it's real CPU spent formatting
+      # and writing debug output on a host that has none to spare.
+      WINEDEBUG: "-all"
     volumes:
       - mt5-wine-prefix:/root/.wine
     # No host port published by default — only the m5-bot container on the
@@ -33,7 +39,14 @@ services:
     # ports:
     #   - "8001:8001"
     restart: unless-stopped
-    mem_limit: 1g
+    # Wine + the MT5 terminal + wine-side Python realistically run in
+    # 400-700MB; capped at 700m/400m reservation so it and m5-bot's 320m
+    # cap fit inside a 1GB host with the OS/Docker daemon's own ~150-250MB.
+    # memswap_limit allows a swap buffer for the terminal's own startup
+    # burst without giving it free rein over host swap.
+    mem_limit: 700m
+    mem_reservation: 400m
+    memswap_limit: 1200m
     cpus: 1.0
 
 volumes:

@@ -21,7 +21,13 @@ services:
       - ../config:/app/config
       - ../data/history:/app/data/history:ro
     restart: unless-stopped
-    mem_limit: 512m
+    # Steady state is well under 200MB RSS (see docs/DEPLOYMENT.md) — capped
+    # at 320m/128m reservation to leave headroom for the mt5-bridge
+    # container on a 1GB host, with memswap_limit giving it a small swap
+    # buffer for GC/import bursts rather than a hard OOM kill.
+    mem_limit: 320m
+    mem_reservation: 128m
+    memswap_limit: 512m
     cpus: 1.0
 
 volumes:

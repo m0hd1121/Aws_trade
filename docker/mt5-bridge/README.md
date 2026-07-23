@@ -107,11 +107,11 @@ MT5_SETUP_URL=https://your-broker.com/mt5setup.exe \
   races CPU contention from the rest of the build. The Dockerfile already
   retries this step 3x and waits for Xvfb to actually accept connections
   (not a fixed sleep) before touching Wine, which resolves it on most
-  hosts. If it still fails: give the build more headroom — stop other
-  containers during the build, add swap (`fallocate -l 2G /swapfile &&
-  chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`), or build
-  on a larger machine and just ship the resulting image / `mt5-wine-prefix`
-  volume to the small host.
+  hosts. If it still fails, see "Running the mt5linux bridge on a 1GB
+  host" in [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) — `./setup.sh`
+  now provisions swap and builds sequentially for exactly this case; if
+  it's still not enough, build the image on a bigger machine and ship it
+  (`docker save`/`docker load`) to the small host instead.
 
 ## Honest limitations
 
