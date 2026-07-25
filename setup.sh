@@ -37,9 +37,10 @@ if [ ! -f .env ]; then
   echo "Created .env from .env.example."
 fi
 
-# Building the mt5-bridge image (Wine + winetricks + the MT5 installer, all
-# resident at once) needs headroom that steady-state usage doesn't — on a
-# host with no swap, that burst is a common cause of the build getting
+# Building the mt5-bridge image (Alpine + Wine + a Windows Python install
+# under Wine), and its first-boot MT5 terminal install, both need headroom
+# that steady-state usage doesn't — on a host with no swap that burst is a
+# common cause of the build or first boot getting
 # OOM-killed partway through, even when the containers' own mem_limits
 # would otherwise fit. Best-effort: only touches hosts that are both
 # low-RAM and swap-less, and never fails the script if it can't get root.
@@ -105,15 +106,17 @@ fi
 COMPOSE_FILES=(-f docker/docker-compose.yml)
 if [ "$WITH_BRIDGE" -eq 1 ]; then
   COMPOSE_FILES+=(-f docker/docker-compose.mt5-bridge.yml)
-  echo "Building app + Wine/MT5 bridge. First build of the bridge image is slow"
-  echo "(installs Wine + MT5 terminal + Python inside it — often 15-30+ minutes)."
+  echo "Building app + Wine/MT5 bridge."
+  echo "The bridge image installs Wine and a Windows Python (several minutes)."
+  echo "The MT5 terminal itself installs on the bridge's FIRST BOOT, not now —"
+  echo "watch it with: docker compose ${COMPOSE_FILES[*]} logs -f mt5-bridge"
 else
   echo "Building app only (--no-bridge: BACKTEST/dashboard, or MT5 reached some other way)."
 fi
 
 # Built one image at a time on purpose: `up -d --build` hands both images
 # to buildx bake in parallel, which doubles peak build-time RAM (pip's
-# wheel builds alongside apt-get/Wine/winetricks) — that's what OOM-killed
+# wheel builds alongside apk/Wine) — that's what OOM-killed
 # an earlier attempt of this on a 512MB host. Sequential is slower but
 # fits a small host; nothing here needs the two images to build together.
 docker compose "${COMPOSE_FILES[@]}" build m5-bot

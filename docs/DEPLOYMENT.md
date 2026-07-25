@@ -44,7 +44,7 @@ inside a separate container.
 
 ## All-Linux via the mt5linux bridge
 
-Full details, architecture diagram, build-arg customization, and
+Full details, architecture diagram, configuration, and
 troubleshooting live in [`docker/mt5-bridge/README.md`](../docker/mt5-bridge/README.md) — this section is the short version.
 
 One command from the repo root:
@@ -71,21 +71,25 @@ cd docker
 cp ../.env.example ../.env
 # edit .env: MT5_BRIDGE_MODE=mt5linux, MT5_BRIDGE_HOST=mt5-bridge, MT5_BRIDGE_PORT=8001
 docker compose -f docker-compose.yml -f docker-compose.mt5-bridge.yml up -d --build
-docker compose logs -f mt5-bridge     # first build takes a while — Wine + MT5 + a Python install, all inside the image
+docker compose logs -f mt5-bridge     # the MT5 terminal installs on FIRST BOOT, into the persisted volume
 ```
 
 **Be honest with yourself about this path before committing to it:**
 
 - `docker/mt5-bridge/Dockerfile` follows the well-documented community
-  recipe for MT5-under-Wine (Xvfb virtual display, WineHQ's own
-  packages, `mt5linux` as the bridge — the same shape as community images
-  like `gmag11/MetaTrader5-docker-image`), but it has **not** been
-  end-to-end verified against a live broker connection in this
-  repository — there's no Windows/Wine available to test it here. Expect
-  to iterate against your specific broker's terminal build.
+  recipe for MT5-under-Wine (Xvfb virtual display, `mt5linux` as the
+  bridge), with structure adapted from
+  [`lucas-campagna/mt5linux@docker-image-optimization`](https://github.com/lucas-campagna/mt5linux/tree/docker-image-optimization/docker).
+  It has **not** been end-to-end verified against a live broker
+  connection in this repository — there's no Docker daemon or broker
+  account available to test it here. Expect to iterate against your
+  specific broker's terminal build. Alpine/musl + Wine is also a
+  less-trodden path than Debian/glibc for MT5 specifically.
 - Most brokers ship their own branded MT5 installer (to preselect their
-  server list) — point the `MT5_SETUP_URL` build arg at it instead of the
-  generic MetaQuotes one if yours does.
+  server list) — set the `MT5_SETUP_URL` environment variable to it
+  instead of the generic MetaQuotes one if yours does. It's read on the
+  bridge's **first boot**, so changing it later means removing the
+  `mt5-wine-prefix` volume and restarting, not rebuilding.
 - Wine + a GUI Windows app in a container is inherently more fragile than
   either a real Windows VPS or a paid cloud bridge: expect occasional
   Wine crashes, and re-verify after MT5 terminal updates.
@@ -155,16 +159,24 @@ between candle closes; `docker-compose.yml` caps the `m5-bot` container at
 ### Running the mt5linux bridge on a 1GB host
 
 The bridge is the expensive part — Wine plus a real MT5 terminal plus a
-second Wine-side Python realistically run in 400-700MB, not the tens of
-MB the app itself needs. On a 1GB droplet there is close to zero margin
-once you add it up:
+second Wine-side Python, not the tens of MB the app itself needs. On a
+1GB droplet there is close to zero margin once you add it up:
 
 | Component | Budget |
 |---|---|
 | OS + Docker daemon | ~150-250MB |
 | `m5-bot` container | 320MB cap (`docker-compose.yml`) |
-| `mt5-bridge` container | 700MB cap (`docker-compose.mt5-bridge.yml`) |
-| **Total** | **~1.2-1.3GB against 1GB physical** |
+| `mt5-bridge` container | 600MB cap (`docker-compose.mt5-bridge.yml`) |
+| **Total** | **~1.1-1.2GB against 1GB physical** |
+
+The bridge image is built to keep that number down: an Alpine base rather
+than Debian+WineHQ, no i386 architecture, the 32-bit Wine tree deleted,
+no winetricks runtimes, and `explorer.exe`/`plugplay.exe` stopped once the
+terminal is up. It also defers the Wine prefix init and the MT5 install
+from build time to first boot, into the persisted `mt5-wine-prefix`
+volume — so the heavy one-time work can fail and be retried with a
+container restart instead of taking a 20-minute image build down with it.
+See [`docker/mt5-bridge/README.md`](../docker/mt5-bridge/README.md).
 
 That's a deficit by design, covered by swap rather than physical RAM —
 swap absorbs the *bursts* (the bridge image's build, and the MT5
@@ -184,7 +196,7 @@ Two more things `./setup.sh` does for the same reason:
 
 - Builds `m5-bot` and `mt5-bridge` **sequentially**, not via `--build`'s
   default parallel buildx bake — building both at once roughly doubles
-  peak build-time RAM (pip wheel builds alongside apt-get/Wine/winetricks)
+  peak build-time RAM (pip wheel builds alongside apk/Wine)
   and is what OOM-killed an earlier attempt of this on a 512MB host.
 - Runs the bridge container with `WINEDEBUG=-all` (the Dockerfile's own
   build-time default stays `fixme-all`, useful if a rebuild needs

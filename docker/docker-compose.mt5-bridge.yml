@@ -19,33 +19,31 @@ services:
   mt5-bridge:
     build:
       context: ./mt5-bridge
-      # Point this at your OWN broker's MT5 installer URL if they provide
-      # one (most do, to preselect their server list in the terminal).
-      args:
-        MT5_SETUP_URL: ${MT5_SETUP_URL:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}
     image: m5-mt5-bridge:latest
     environment:
       MT5LINUX_PORT: "8001"
-      # -all silences Wine's fixme/warn channel noise at runtime (the
-      # Dockerfile's build-time default of fixme-all stays in the image for
-      # troubleshooting a rebuild) — that logging isn't free: on the OLE/RPC
-      # noise seen during a slow wineboot, it's real CPU spent formatting
-      # and writing debug output on a host that has none to spare.
+      # Silences Wine's fixme/warn channels. That logging isn't free — on
+      # the OLE/RPC noise seen during a slow wineboot it's real CPU spent
+      # formatting debug output on a host that has none to spare.
       WINEDEBUG: "-all"
+      # Point at YOUR broker's own installer if they ship one (most do, to
+      # preselect their server list). Read on FIRST BOOT, not at build
+      # time — the terminal installs into the persisted volume below, so
+      # changing this means "delete the volume and restart", not "rebuild".
+      MT5_SETUP_URL: ${MT5_SETUP_URL:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}
     volumes:
-      - mt5-wine-prefix:/root/.wine
+      - mt5-wine-prefix:/opt/wineprefix
     # No host port published by default — only the m5-bot container on the
     # compose network needs to reach it. Uncomment to debug directly:
     # ports:
     #   - "8001:8001"
     restart: unless-stopped
-    # Wine + the MT5 terminal + wine-side Python realistically run in
-    # 400-700MB; capped at 700m/400m reservation so it and m5-bot's 320m
-    # cap fit inside a 1GB host with the OS/Docker daemon's own ~150-250MB.
-    # memswap_limit allows a swap buffer for the terminal's own startup
-    # burst without giving it free rein over host swap.
-    mem_limit: 700m
-    mem_reservation: 400m
+    # Lower than the old Debian/WineHQ image needed: Alpine base, no i386
+    # Wine tree, no winetricks runtimes, and explorer/plugplay stopped
+    # after boot. The first-boot MT5 install is the peak — that's what
+    # memswap_limit's headroom is for.
+    mem_limit: 600m
+    mem_reservation: 300m
     memswap_limit: 1200m
     cpus: 1.0
 

@@ -53,9 +53,11 @@ PAPER/DEMO/LIVE trading works on a plain Linux VPS with zero Wine
 installed on it directly. Open `http://localhost:8000`, enter your MT5
 login/password/server in the dashboard's **Broker Connection** panel
 (talks to the MT5 API directly — no GUI/VNC step), then click Start Bot.
-First build is slow (Wine + the MT5 terminal + a Python install, all
-inside the bridge image — often 15-30+ minutes); everything after that
-is fast. See [`docker/mt5-bridge/README.md`](docker/mt5-bridge/README.md)
+The bridge image builds Alpine + Wine + a Windows Python (several
+minutes); the MT5 terminal itself installs on the bridge's **first boot**
+into a persisted volume, so a hiccup there is a `docker compose restart`
+rather than a failed rebuild. Watch it with `docker compose logs -f
+mt5-bridge`. See [`docker/mt5-bridge/README.md`](docker/mt5-bridge/README.md)
 for how it works, customization, and troubleshooting.
 
 Just want BACKTEST + the dashboard, or already running MT5 elsewhere
