@@ -43,6 +43,32 @@ else
 fi
 log "wineprefix: ${WINEPREFIX} (WINEARCH=${WINEARCH:-unset})"
 
+# The container's own memory ceiling, which is enforced independently of
+# how much RAM the host has — a too-low limit here SIGKILLs the MT5
+# installer even on a large machine, and that is otherwise invisible.
+container_mem_limit() {
+    if [ -r /sys/fs/cgroup/memory.max ]; then
+        cat /sys/fs/cgroup/memory.max                       # cgroup v2
+    elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+        cat /sys/fs/cgroup/memory/memory.limit_in_bytes     # cgroup v1
+    else
+        echo unknown
+    fi
+}
+MEM_MAX="$(container_mem_limit)"
+# "Unlimited" is reported inconsistently: cgroup v2 may say "max", while v1
+# (and some v2 setups) report a sentinel so large it renders as millions of
+# MB. Treat anything above 1TiB as no limit rather than printing nonsense.
+case "${MEM_MAX}" in
+    ''|*[!0-9]*) MEM_MAX_DESC="unlimited/unknown"; MEM_MAX="" ;;
+    *) if [ "${MEM_MAX}" -gt 1099511627776 ]; then
+           MEM_MAX_DESC="unlimited"; MEM_MAX=""
+       else
+           MEM_MAX_DESC="$((MEM_MAX / 1024 / 1024))MB"
+       fi ;;
+esac
+log "container memory limit: ${MEM_MAX_DESC}"
+
 # --- virtual display -------------------------------------------------
 # Prefer xdpyinfo (a real connection attempt), fall back to the X socket
 # Xvfb creates when it binds — so this does not hard-depend on one more
@@ -129,7 +155,33 @@ if [ -z "${TERMINAL}" ]; then
         exit 1
     fi
     log "Running the MT5 installer under Wine (this takes a few minutes)..."
-    "${WINE_BIN}" /tmp/mt5setup.exe /auto || log "installer returned non-zero; checking anyway"
+    if "${WINE_BIN}" /tmp/mt5setup.exe /auto; then
+        :
+    else
+        rc=$?
+        # 137 = 128 + SIGKILL. Nothing in this script sends that, so it is
+        # the OOM killer — and the ceiling it enforced is the CONTAINER's
+        # cgroup limit, which applies no matter how much RAM the host has.
+        # Worth naming explicitly: a bare "Killed" line looks like an MT5
+        # fault and sends you debugging Wine instead of memory.
+        if [ "${rc}" -eq 137 ]; then
+            log "FATAL: the installer was SIGKILLed by the out-of-memory killer."
+            log "This is a memory ceiling, not an MT5 or Wine fault."
+            if [ -z "${MEM_MAX}" ]; then
+                log "  container limit: ${MEM_MAX_DESC} — so the HOST ran out of RAM."
+            else
+                log "  container limit: ${MEM_MAX_DESC} (mem_limit in docker-compose.mt5-bridge.yml)"
+            fi
+            log "  The MT5 installer peaks well above the bridge's steady-state use,"
+            log "  so the limit that is right for running it is too small to install it."
+            log "  Fix: make sure the host has swap, then retry —"
+            log "    sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \\"
+            log "      && sudo mkswap /swapfile && sudo swapon /swapfile"
+            log "  Stopping the m5-bot container during the install also frees ~320MB."
+            exit 1
+        fi
+        log "installer returned ${rc}; checking anyway"
+    fi
 
     # Wait for the installer to actually FINISH, not merely for the file to
     # show up: wineserver -w blocks until every Wine process has exited,

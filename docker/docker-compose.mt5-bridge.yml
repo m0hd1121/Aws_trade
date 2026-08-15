@@ -38,13 +38,20 @@ services:
     # ports:
     #   - "8001:8001"
     restart: unless-stopped
-    # Lower than the old Debian/WineHQ image needed: Alpine base, no i386
-    # Wine tree, no winetricks runtimes, and explorer/plugplay stopped
-    # after boot. The first-boot MT5 install is the peak — that's what
-    # memswap_limit's headroom is for.
-    mem_limit: 600m
+    # mem_limit is a CEILING, not an allocation — the container only uses
+    # what it touches, so a high limit costs nothing while idle. It has to
+    # be sized for the peak, and the peak is the one-time MT5 install,
+    # which is far above steady state (Wine + terminal + wine-python settle
+    # around 400-600MB). Sizing this for steady state instead is what got
+    # the installer SIGKILLed at 600m with a bare "Killed" in the log.
+    #
+    # On a 1GB host this deliberately over-commits and relies on swap to
+    # absorb the install spike; ./setup.sh provisions 2GB of swap on
+    # low-RAM hosts for exactly this. Without swap, lower this to ~700m
+    # and stop the m5-bot container while the install runs.
+    mem_limit: 1200m
     mem_reservation: 300m
-    memswap_limit: 1200m
+    memswap_limit: 2400m
     cpus: 1.0
 
 volumes:
