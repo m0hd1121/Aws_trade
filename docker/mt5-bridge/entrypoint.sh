@@ -35,7 +35,7 @@ log() { echo "[mt5-bridge] $*"; }
 # into something diagnosable from the log alone rather than another
 # round-trip: "Bad EXE format" on a 64-bit binary, for instance, is a
 # 64-bit-support question, which these three lines answer directly.
-log "wine binary: ${WINE_BIN} ($("${WINE_BIN}" --version 2>/dev/null || echo 'version unknown'))"
+log "wine binary: ${WINE_BIN} ($(timeout 30 "${WINE_BIN}" --version 2>/dev/null || echo 'version unknown'))"
 if [ -d /usr/lib/wine/x86_64-windows ]; then
     log "wine 64-bit support: present (/usr/lib/wine/x86_64-windows)"
 else
@@ -101,7 +101,11 @@ log "Xvfb ready on ${DISPLAY} (pid ${XVFB_PID})"
 # Python in it (baked by the builder stage) does not actually need this to
 # succeed — the subsequent `wine` calls will initialize what they need.
 log "Initializing Wine prefix (failure tolerated)..."
-"${WINE_BIN}" wineboot --init >/dev/null 2>&1 || log "wineboot returned non-zero; continuing"
+# Bounded: wineboot has been seen burning ~300s on its internal boot-event
+# timeout on slow hosts. Its failure is already tolerated, so cap the wait
+# rather than let it dominate startup.
+timeout 120 "${WINE_BIN}" wineboot --init >/dev/null 2>&1 \
+    || log "wineboot returned non-zero or timed out; continuing"
 wineserver -w 2>/dev/null || true
 
 # --- reconcile the Wine-side packages with this image -----------------
@@ -118,18 +122,29 @@ wineserver -w 2>/dev/null || true
 # "invalid message type" on the server and an empty read on the client
 # ("not enough values to unpack") — with no hint that a version was
 # involved. Reconcile explicitly at boot instead of trusting the build.
+#
+# Every Wine call here is wrapped in `timeout`. Boot must not be able to
+# block forever on one: an unbounded `wine python -c "import MetaTrader5"`
+# probe hung indefinitely (that import attaches to the terminal rather
+# than being a pure import), which silently stalled the whole entrypoint
+# before it ever started the RPyC server — the container sat "Up" with
+# nothing listening on 8001 and no error anywhere.
 ensure_wine_packages() {
     want="${RPYC_VERSION:-5.3.1}"
-    have="$("${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' 2>/dev/null | tr -d '\r\n')"
+
+    # rpyc's import is pure and safe to run, unlike MetaTrader5's.
+    have="$(timeout 60 "${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' \
+            2>/dev/null | tr -d '\r\n')"
 
     if [ "${have}" = "${want}" ]; then
         log "Wine-side rpyc ${have} matches the Linux side"
     else
-        log "Wine-side rpyc is '${have:-missing/unimportable}' but this image expects ${want}."
+        log "Wine-side rpyc is '${have:-missing/unreadable}' but this image expects ${want}."
         log "Installing rpyc==${want} into the Wine prefix (persists in the volume)..."
-        if "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir --disable-pip-version-check \
-                "rpyc==${want}" >/dev/null 2>&1; then
-            have="$("${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' 2>/dev/null | tr -d '\r\n')"
+        if timeout 300 "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir \
+                --disable-pip-version-check "rpyc==${want}" >/dev/null 2>&1; then
+            have="$(timeout 60 "${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' \
+                    2>/dev/null | tr -d '\r\n')"
             log "Wine-side rpyc is now ${have:-unknown}"
         else
             log "WARNING: could not install rpyc==${want} under Wine — the bridge"
@@ -137,13 +152,17 @@ ensure_wine_packages() {
         fi
     fi
 
-    # The whole point of the Wine side is this package; a clear message
-    # here beats an opaque failure on the first broker call.
-    if ! "${WINE_BIN}" "${WINE_PYTHON}" -c 'import MetaTrader5' >/dev/null 2>&1; then
-        log "WARNING: MetaTrader5 is not importable by the Wine-side Python."
-        log "Attempting to install it into the prefix..."
-        "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir --disable-pip-version-check \
-            MetaTrader5 >/dev/null 2>&1 || log "WARNING: MetaTrader5 install failed"
+    # Presence of MetaTrader5 is checked ON DISK, never by importing it.
+    # Importing has side effects (it reaches for the terminal) and can
+    # block forever, which is precisely the failure described above.
+    if [ -d "${WINEPREFIX}/drive_c/Python311/Lib/site-packages/MetaTrader5" ] || \
+       ls "${WINEPREFIX}/drive_c/Python311/Lib/site-packages" 2>/dev/null | grep -qi '^MetaTrader5'; then
+        log "Wine-side MetaTrader5 package present"
+    else
+        log "Wine-side MetaTrader5 package missing — installing..."
+        timeout 300 "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir \
+            --disable-pip-version-check MetaTrader5 >/dev/null 2>&1 \
+            || log "WARNING: MetaTrader5 install failed"
     fi
 }
 ensure_wine_packages
@@ -215,7 +234,9 @@ if [ -z "${TERMINAL}" ]; then
         exit 1
     fi
     log "Running the MT5 installer under Wine (this takes a few minutes)..."
-    if "${WINE_BIN}" /tmp/mt5setup.exe /auto; then
+    # Generous but finite: a genuinely stuck installer should surface as a
+    # failure we can report, not as a container that sits "Up" forever.
+    if timeout 1800 "${WINE_BIN}" /tmp/mt5setup.exe /auto; then
         :
     else
         rc=$?
