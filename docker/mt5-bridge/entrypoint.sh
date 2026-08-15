@@ -117,37 +117,53 @@ wineserver -w 2>/dev/null || true
 # terminal64.exe is tens of MB.
 MIN_TERMINAL_BYTES=5000000
 
+# Diagnostics here go to STDERR on purpose: this runs inside a command
+# substitution, so anything on stdout would be captured as if it were the
+# path. Docker records stderr in the container log just the same.
 terminal_is_valid() {
     f="$1"
     [ -n "${f}" ] && [ -f "${f}" ] || return 1
     size="$(wc -c < "${f}" 2>/dev/null || echo 0)"
     [ "${size}" -ge "${MIN_TERMINAL_BYTES}" ] || {
-        log "terminal64.exe is only ${size} bytes — truncated, not a real install"
+        log "terminal64.exe is only ${size} bytes — truncated, not a real install" >&2
         return 1
     }
     magic="$(head -c 2 "${f}" 2>/dev/null | od -An -c | tr -d ' \n')"
     [ "${magic}" = "MZ" ] || {
-        log "terminal64.exe does not start with the MZ PE signature (got '${magic}')"
+        log "terminal64.exe does not start with the MZ PE signature (got '${magic}')" >&2
         return 1
     }
     return 0
 }
 
+# MT5's default install path contains SPACES:
+#   /opt/wineprefix/drive_c/Program Files/MetaTrader 5/terminal64.exe
+# so `for f in $(find ...)` word-splits it into three nonexistent paths and
+# reports a perfectly good install as missing. Take the first match through
+# a quoted command substitution instead, which preserves the whole path.
+locate_terminal_path() {
+    find "${WINEPREFIX}/drive_c" -maxdepth 4 -name terminal64.exe -type f 2>/dev/null | head -1
+}
+
 find_terminal() {
-    for f in $(find "${WINEPREFIX}/drive_c" -maxdepth 4 -name terminal64.exe -type f 2>/dev/null); do
-        if terminal_is_valid "${f}"; then
-            echo "${f}"
-            return 0
-        fi
-    done
-    return 1
+    f="$(locate_terminal_path)"
+    [ -n "${f}" ] || return 1
+    terminal_is_valid "${f}" || return 1
+    printf '%s\n' "${f}"
 }
 
 TERMINAL="$(find_terminal || true)"
 if [ -z "${TERMINAL}" ]; then
     log "No valid MT5 terminal in the prefix — installing."
-    # Clear any partial install so the installer starts from clean state.
-    rm -rf "${WINEPREFIX}/drive_c/Program Files/MetaTrader 5" 2>/dev/null || true
+    # Only ever delete an install we have positively identified as broken.
+    # Deleting whenever the lookup came back empty means any bug in that
+    # lookup destroys a good 130MB install and re-downloads it — which is
+    # exactly what the word-splitting bug above did on every restart.
+    broken="$(locate_terminal_path)"
+    if [ -n "${broken}" ]; then
+        log "Clearing a partial install at: ${broken}"
+        rm -rf "${WINEPREFIX}/drive_c/Program Files/MetaTrader 5" 2>/dev/null || true
+    fi
     log "Downloading ${MT5_SETUP_URL}"
     if ! curl -fsSL -o /tmp/mt5setup.exe "${MT5_SETUP_URL}"; then
         log "FATAL: could not download the MT5 installer."
