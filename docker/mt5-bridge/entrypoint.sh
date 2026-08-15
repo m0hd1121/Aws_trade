@@ -138,10 +138,38 @@ PYEOF
 write_config || log "could not write terminal config; continuing"
 
 # --- MT5 terminal process --------------------------------------------
+# `wine app.exe` is a LAUNCHER: it hands the process off to wineserver and
+# can exit long before the Windows app does. So the PID it returns is not
+# a liveness signal — checking it with `kill -0` reports a perfectly
+# healthy terminal as dead. Ask the process table about terminal64.exe
+# instead. (procps is installed for exactly this.)
+MT5_LOG=/tmp/mt5-terminal.log
+
+mt5_running() {
+    pgrep -f 'terminal64\.exe' >/dev/null 2>&1
+}
+
+start_mt5() {
+    # Output goes to a file rather than /dev/null so a genuine crash leaves
+    # evidence — WINEDEBUG=-all already keeps this quiet in normal operation.
+    "${WINE_BIN}" "${TERMINAL}" /portable >"${MT5_LOG}" 2>&1 &
+}
+
 log "Starting MT5 terminal..."
-"${WINE_BIN}" "${TERMINAL}" /portable >/dev/null 2>&1 &
-MT5_PID=$!
-sleep 10
+start_mt5
+for _ in $(seq 1 20); do
+    mt5_running && break
+    sleep 1
+done
+if mt5_running; then
+    log "MT5 terminal is running (pid $(pgrep -f 'terminal64\.exe' | head -1))"
+else
+    log "WARNING: terminal64.exe is not in the process table yet."
+    log "Last output from it:"
+    tail -n 20 "${MT5_LOG}" 2>/dev/null | sed 's/^/    /' || true
+    log "Continuing anyway — MetaTrader5.initialize() starts the terminal"
+    log "on demand too, so the bridge may still work."
+fi
 
 # --- mt5linux RPyC server --------------------------------------------
 # NOTE the argument order. mt5linux is a LINUX-side launcher: it writes an
@@ -177,7 +205,8 @@ done
 
 cleanup() {
     log "Shutting down..."
-    kill "${BRIDGE_PID}" "${MT5_PID}" "${XVFB_PID}" 2>/dev/null || true
+    kill "${BRIDGE_PID}" "${XVFB_PID}" 2>/dev/null || true
+    pkill -f 'terminal64\.exe' 2>/dev/null || true
     wineserver -k 2>/dev/null || true
     rm -f /tmp/.X99-lock
 }
@@ -200,6 +229,8 @@ log "Enter broker credentials from the dashboard's Broker Connection panel."
 # with the reason visible in the logs.
 MAX_BRIDGE_FAILS=5
 BRIDGE_FAILS=0
+MAX_MT5_FAILS=5
+MT5_FAILS=0
 
 while true; do
     sleep 10
@@ -218,9 +249,20 @@ while true; do
         BRIDGE_FAILS=0
     fi
 
-    if ! kill -0 "${MT5_PID}" 2>/dev/null; then
-        log "MT5 terminal (pid ${MT5_PID}) died — restarting"
-        "${WINE_BIN}" "${TERMINAL}" /portable >/dev/null 2>&1 &
-        MT5_PID=$!
+    # Liveness by process table, not by the wine launcher's PID — see the
+    # comment at start_mt5. Capped too: an MT5 that cannot stay up should
+    # be reported, not respawned forever on a host with 1GB of RAM.
+    if mt5_running; then
+        MT5_FAILS=0
+    else
+        MT5_FAILS=$((MT5_FAILS + 1))
+        if [ "${MT5_FAILS}" -ge "${MAX_MT5_FAILS}" ]; then
+            log "FATAL: the MT5 terminal has failed to stay up ${MT5_FAILS} times."
+            log "Last output from it:"
+            tail -n 30 "${MT5_LOG}" 2>/dev/null | sed 's/^/    /' || true
+            exit 1
+        fi
+        log "MT5 terminal not running (${MT5_FAILS}/${MAX_MT5_FAILS}) — restarting"
+        start_mt5
     fi
 done
