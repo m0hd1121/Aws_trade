@@ -104,6 +104,50 @@ log "Initializing Wine prefix (failure tolerated)..."
 "${WINE_BIN}" wineboot --init >/dev/null 2>&1 || log "wineboot returned non-zero; continuing"
 wineserver -w 2>/dev/null || true
 
+# --- reconcile the Wine-side packages with this image -----------------
+# WHY THIS EXISTS. /opt/wineprefix is a NAMED VOLUME, and Docker seeds a
+# named volume from the image only when the volume is FIRST created —
+# after that the image's copy of that path is ignored completely. The
+# Wine-side Python and its packages live inside that path, so they are
+# frozen at whatever the volume was created with and rebuilding this image
+# does NOT update them.
+#
+# That produced a genuinely confusing failure: the Linux side was pinned
+# to rpyc==5.3.1 while the Wine side kept a different version from an
+# older build. RPyC is a wire protocol, so every connection died with
+# "invalid message type" on the server and an empty read on the client
+# ("not enough values to unpack") — with no hint that a version was
+# involved. Reconcile explicitly at boot instead of trusting the build.
+ensure_wine_packages() {
+    want="${RPYC_VERSION:-5.3.1}"
+    have="$("${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' 2>/dev/null | tr -d '\r\n')"
+
+    if [ "${have}" = "${want}" ]; then
+        log "Wine-side rpyc ${have} matches the Linux side"
+    else
+        log "Wine-side rpyc is '${have:-missing/unimportable}' but this image expects ${want}."
+        log "Installing rpyc==${want} into the Wine prefix (persists in the volume)..."
+        if "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir --disable-pip-version-check \
+                "rpyc==${want}" >/dev/null 2>&1; then
+            have="$("${WINE_BIN}" "${WINE_PYTHON}" -c 'import rpyc; print(rpyc.__version__)' 2>/dev/null | tr -d '\r\n')"
+            log "Wine-side rpyc is now ${have:-unknown}"
+        else
+            log "WARNING: could not install rpyc==${want} under Wine — the bridge"
+            log "may fail with 'invalid message type' until this is resolved."
+        fi
+    fi
+
+    # The whole point of the Wine side is this package; a clear message
+    # here beats an opaque failure on the first broker call.
+    if ! "${WINE_BIN}" "${WINE_PYTHON}" -c 'import MetaTrader5' >/dev/null 2>&1; then
+        log "WARNING: MetaTrader5 is not importable by the Wine-side Python."
+        log "Attempting to install it into the prefix..."
+        "${WINE_BIN}" "${WINE_PYTHON}" -m pip install --no-cache-dir --disable-pip-version-check \
+            MetaTrader5 >/dev/null 2>&1 || log "WARNING: MetaTrader5 install failed"
+    fi
+}
+ensure_wine_packages
+
 # --- MT5 terminal (first boot only) ----------------------------------
 # "The file exists" is NOT the same as "the install finished". The
 # installer forks and keeps writing after its launcher returns, so if the

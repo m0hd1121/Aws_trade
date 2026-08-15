@@ -124,7 +124,12 @@ RUN apk add --no-cache py3-numpy || \
 # pile of unrelated packaging tools. numpy above and rpyc here are its
 # only real runtime needs.
 # Keep RPYC_VERSION identical to the builder stage's — see the note there.
+# Also promoted to ENV so entrypoint.sh can reconcile the Wine side against
+# it at boot: the Wine prefix is a named volume, so the packages installed
+# into it at build time are frozen at whatever the volume was first created
+# with and are NOT refreshed by rebuilding this image.
 ARG RPYC_VERSION=5.3.1
+ENV RPYC_VERSION=${RPYC_VERSION}
 RUN pip install --no-cache-dir --break-system-packages --no-deps mt5linux==0.1.9 && \
     pip install --no-cache-dir --break-system-packages "rpyc==${RPYC_VERSION}" && \
     python3 -c "import mt5linux"

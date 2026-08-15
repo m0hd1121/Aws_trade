@@ -121,6 +121,38 @@ MT5_BRIDGE_PORT=8001
 | `WINEDEBUG` | runtime env | `-all` | Set to `fixme-all` temporarily when debugging Wine itself. |
 | `WINE_PYTHON_URL` | build arg | Python 3.11.9 (64-bit) | The Python installed *inside* Wine. |
 
+## The volume shadows the image — read this before debugging
+
+`/opt/wineprefix` is a **named Docker volume**, and Docker seeds a named
+volume from the image **only when the volume is first created**. After
+that, the image's copy of that path is ignored entirely.
+
+The Wine-side Python and its packages (`MetaTrader5`, `rpyc`, `plumbum`)
+live inside that path. So:
+
+> Rebuilding this image does **not** update anything inside the Wine
+> prefix. `docker compose build` will happily install a new package
+> version into the image while the running container keeps using the old
+> one from the volume.
+
+This produced a genuinely misleading failure once: the Linux side was
+pinned to `rpyc==5.3.1` while the Wine side kept an older build's
+version. RPyC is a wire protocol, so every connection died with
+`invalid message type: 18` on the server and
+`not enough values to unpack (expected 3, got 0)` on the client — with
+nothing pointing at a version mismatch.
+
+`entrypoint.sh` now reconciles this at boot: it compares the Wine-side
+`rpyc` against the image's `RPYC_VERSION` and installs the right one into
+the volume if they differ. If you change Wine-side packages in the
+Dockerfile, either bump `RPYC_VERSION`/extend that reconcile step, or
+recreate the volume:
+
+```bash
+docker compose ... down
+docker volume rm docker_mt5-wine-prefix   # forces a fresh MT5 install too
+```
+
 ## Troubleshooting
 
 Start with `docker compose logs -f mt5-bridge` — the entrypoint logs each
