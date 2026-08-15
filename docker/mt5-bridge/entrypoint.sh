@@ -177,31 +177,50 @@ done
 
 cleanup() {
     log "Shutting down..."
-    kill "${WATCHDOG_PID}" "${BRIDGE_PID}" "${MT5_PID}" "${XVFB_PID}" 2>/dev/null || true
+    kill "${BRIDGE_PID}" "${MT5_PID}" "${XVFB_PID}" 2>/dev/null || true
     wineserver -k 2>/dev/null || true
     rm -f /tmp/.X99-lock
 }
 trap cleanup EXIT INT TERM
 
-# --- watchdog ---------------------------------------------------------
-watchdog() {
-    while true; do
-        sleep 10
-        if ! kill -0 "${BRIDGE_PID}" 2>/dev/null; then
-            log "RPyC server (pid ${BRIDGE_PID}) died — restarting"
-            start_bridge
-        fi
-        if ! kill -0 "${MT5_PID}" 2>/dev/null; then
-            log "MT5 terminal (pid ${MT5_PID}) died — restarting"
-            "${WINE_BIN}" "${TERMINAL}" /portable >/dev/null 2>&1 &
-            MT5_PID=$!
-        fi
-    done
-}
-watchdog &
-WATCHDOG_PID=$!
-
 log "Bridge up. Point the app at MT5_BRIDGE_HOST=mt5-bridge MT5_BRIDGE_PORT=${MT5LINUX_PORT}"
 log "Enter broker credentials from the dashboard's Broker Connection panel."
 
-wait "${BRIDGE_PID}"
+# --- supervise, in the foreground -------------------------------------
+# This deliberately does NOT `wait` on ${BRIDGE_PID}: the supervisor below
+# replaces that PID on every restart, so waiting on the original would
+# both watch a stale PID and — under `set -e` — kill the whole container
+# the first time the RPyC server exited non-zero, before any restart could
+# happen. That turned a one-line Python ImportError into an endless
+# container crash-loop.
+#
+# A transient death is restarted in place. A persistent one still has to
+# surface rather than be papered over, so after MAX_BRIDGE_FAILS quick
+# failures we exit non-zero and let Docker's restart policy handle it —
+# with the reason visible in the logs.
+MAX_BRIDGE_FAILS=5
+BRIDGE_FAILS=0
+
+while true; do
+    sleep 10
+
+    if ! kill -0 "${BRIDGE_PID}" 2>/dev/null; then
+        BRIDGE_FAILS=$((BRIDGE_FAILS + 1))
+        if [ "${BRIDGE_FAILS}" -ge "${MAX_BRIDGE_FAILS}" ]; then
+            log "FATAL: the RPyC server has died ${BRIDGE_FAILS} times in a row."
+            log "This is a persistent fault, not a blip — read the traceback above."
+            exit 1
+        fi
+        log "RPyC server died (${BRIDGE_FAILS}/${MAX_BRIDGE_FAILS}) — restarting"
+        start_bridge
+    else
+        # Survived a full interval: treat earlier deaths as transient.
+        BRIDGE_FAILS=0
+    fi
+
+    if ! kill -0 "${MT5_PID}" 2>/dev/null; then
+        log "MT5 terminal (pid ${MT5_PID}) died — restarting"
+        "${WINE_BIN}" "${TERMINAL}" /portable >/dev/null 2>&1 &
+        MT5_PID=$!
+    fi
+done

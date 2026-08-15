@@ -92,11 +92,22 @@ RUN apk add --no-cache \
     # (~hundreds of MB) in an image that will never load a 32-bit PE.
     && rm -rf /usr/lib/wine/i386-windows /usr/lib/wine/i386-unix
 
+# numpy is NOT optional despite --no-deps below: mt5linux/__init__.py does
+# `from numpy import array` at module import time, so `python -m mt5linux`
+# cannot even start without it. Alpine's own py3-numpy is prebuilt for
+# musl, which avoids depending on numpy publishing a musllinux wheel and
+# avoids needing a compiler in the image; pip is a fallback if the apk
+# package is ever unavailable.
+RUN apk add --no-cache py3-numpy || \
+    pip install --no-cache-dir --break-system-packages numpy
+
 # Linux-side mt5linux. --no-deps for the same reason as the main image:
-# its declared deps pin numpy==1.21.4 plus a pile of unrelated packaging
-# tools. rpyc is its only real runtime need here.
+# its declared deps pin numpy==1.21.4 (no wheel for modern Python) plus a
+# pile of unrelated packaging tools. numpy above and rpyc here are its
+# only real runtime needs.
 RUN pip install --no-cache-dir --break-system-packages --no-deps mt5linux==0.1.9 && \
-    pip install --no-cache-dir --break-system-packages rpyc==5.3.1
+    pip install --no-cache-dir --break-system-packages rpyc==5.3.1 && \
+    python3 -c "import mt5linux"
 
 COPY --from=builder /opt/wineprefix /opt/wineprefix
 
