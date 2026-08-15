@@ -11,16 +11,28 @@ set -e
 DISPLAY="${DISPLAY:-:99}"
 export DISPLAY
 
-if ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+# Prefer xdpyinfo (an actual connection attempt), but fall back to the X
+# socket that Xvfb creates when it binds, so this does not hard-depend on
+# one more package being present under its expected name.
+display_ready() {
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1
+    else
+        num="${DISPLAY#:}"
+        [ -S "/tmp/.X11-unix/X${num%%.*}" ]
+    fi
+}
+
+if ! display_ready; then
     rm -f "/tmp/.X${DISPLAY#:}-lock"
     Xvfb "${DISPLAY}" -screen 0 1024x768x16 -nolisten tcp >/dev/null 2>&1 &
     for _ in $(seq 1 30); do
-        xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+        display_ready && break
         sleep 1
     done
 fi
 
-if ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+if ! display_ready; then
     echo "with-xvfb.sh: Xvfb on ${DISPLAY} never became ready" >&2
     exit 1
 fi

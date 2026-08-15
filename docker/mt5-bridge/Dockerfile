@@ -42,7 +42,7 @@ ENV WINEPREFIX=/opt/wineprefix \
     WINEDLLOVERRIDES="mscoree=" \
     DISPLAY=:99
 
-RUN apk add --no-cache wine xvfb curl x11-utils
+RUN apk add --no-cache wine xvfb curl xdpyinfo
 
 # Windows-side Python. Only three packages ever run under Wine:
 #   MetaTrader5 — the real broker API
@@ -83,7 +83,7 @@ FROM alpine:3.20
 RUN apk add --no-cache \
         wine \
         xvfb \
-        x11-utils \
+        xdpyinfo \
         python3 \
         py3-pip \
         curl \

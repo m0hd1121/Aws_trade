@@ -32,14 +32,26 @@ fi
 log() { echo "[mt5-bridge] $*"; }
 
 # --- virtual display -------------------------------------------------
+# Prefer xdpyinfo (a real connection attempt), fall back to the X socket
+# Xvfb creates when it binds — so this does not hard-depend on one more
+# package being present under its expected name.
+display_ready() {
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1
+    else
+        num="${DISPLAY#:}"
+        [ -S "/tmp/.X11-unix/X${num%%.*}" ]
+    fi
+}
+
 rm -f /tmp/.X99-lock /tmp/.X0-lock
 Xvfb "${DISPLAY}" -screen 0 1024x768x16 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!
 for _ in $(seq 1 30); do
-    xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1 && break
+    display_ready && break
     sleep 1
 done
-if ! xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+if ! display_ready; then
     log "FATAL: Xvfb on ${DISPLAY} never became ready"
     exit 1
 fi
