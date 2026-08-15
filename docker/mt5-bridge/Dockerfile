@@ -5,9 +5,9 @@
 # Structure and most of the size/robustness wins here are adapted from
 # lucas-campagna/mt5linux's `docker-image-optimization` branch:
 #   https://github.com/lucas-campagna/mt5linux/tree/docker-image-optimization/docker
-# Specifically: Alpine instead of Debian+WineHQ, no i386 architecture, the
-# 32-bit Wine tree deleted outright, a multi-stage build so none of the
-# build tooling lands in the runtime image, WINEDLLOVERRIDES=mscoree= to
+# Specifically: Alpine instead of Debian+WineHQ, a multi-stage build so
+# none of the build tooling lands in the runtime image,
+# WINEDLLOVERRIDES=mscoree= to
 # suppress Wine's Mono prompt, and — the important one — moving Wine
 # prefix init and the MT5 install OUT of the build and into runtime, where
 # failure is tolerated and retried instead of killing the whole build.
@@ -38,6 +38,7 @@
 FROM alpine:3.20 AS builder
 
 ENV WINEPREFIX=/opt/wineprefix \
+    WINEARCH=win64 \
     WINEDEBUG=-all \
     WINEDLLOVERRIDES="mscoree=" \
     DISPLAY=:99
@@ -76,7 +77,7 @@ RUN with-xvfb.sh wine "${WINE_PYTHON}" -m pip install \
 
 # ---------------------------------------------------------------------
 # Runtime: Alpine + Wine + a Linux python to drive mt5linux. No compiler,
-# no curl-time build deps, no 32-bit Wine.
+# no build deps.
 # ---------------------------------------------------------------------
 FROM alpine:3.20
 
@@ -87,10 +88,20 @@ RUN apk add --no-cache \
         python3 \
         py3-pip \
         curl \
-        procps \
-    # MT5's terminal64.exe is 64-bit; the 32-bit Wine tree is dead weight
-    # (~hundreds of MB) in an image that will never load a 32-bit PE.
-    && rm -rf /usr/lib/wine/i386-windows /usr/lib/wine/i386-unix
+        procps
+
+# NOTE: an earlier version deleted /usr/lib/wine/i386-windows and
+# /usr/lib/wine/i386-unix here, copying a size optimization from upstream
+# (which drops only i386-windows). Dropped, for two reasons:
+#
+#   1. It optimizes the wrong resource. Those files cost DISK, not RAM,
+#      and RAM is the binding constraint on a small VPS — so the saving
+#      bought nothing against the actual limit while adding risk.
+#   2. Deleting paths that may not exist under these names on Alpine is a
+#      silent no-op that looks like it did something, which makes it a
+#      misleading suspect when Wine later misbehaves.
+#
+# Not reintroducing it without a real build to test against.
 
 # numpy is NOT optional despite --no-deps below: mt5linux/__init__.py does
 # `from numpy import array` at module import time, so `python -m mt5linux`
@@ -116,6 +127,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /usr/local/bin/with-xvfb.sh /entrypoint.sh
 
 ENV WINEPREFIX=/opt/wineprefix \
+    WINEARCH=win64 \
     WINEDEBUG=-all \
     WINEDLLOVERRIDES="mscoree=" \
     DISPLAY=:99 \

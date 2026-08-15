@@ -31,6 +31,18 @@ fi
 
 log() { echo "[mt5-bridge] $*"; }
 
+# One-time environment report. Cheap, and it turns the next Wine problem
+# into something diagnosable from the log alone rather than another
+# round-trip: "Bad EXE format" on a 64-bit binary, for instance, is a
+# 64-bit-support question, which these three lines answer directly.
+log "wine binary: ${WINE_BIN} ($("${WINE_BIN}" --version 2>/dev/null || echo 'version unknown'))"
+if [ -d /usr/lib/wine/x86_64-windows ]; then
+    log "wine 64-bit support: present (/usr/lib/wine/x86_64-windows)"
+else
+    log "wine 64-bit support: MISSING — 64-bit .exe files will not run"
+fi
+log "wineprefix: ${WINEPREFIX} (WINEARCH=${WINEARCH:-unset})"
+
 # --- virtual display -------------------------------------------------
 # Prefer xdpyinfo (a real connection attempt), fall back to the X socket
 # Xvfb creates when it binds — so this does not hard-depend on one more
@@ -67,13 +79,49 @@ log "Initializing Wine prefix (failure tolerated)..."
 wineserver -w 2>/dev/null || true
 
 # --- MT5 terminal (first boot only) ----------------------------------
-find_terminal() {
-    find "${WINEPREFIX}/drive_c" -maxdepth 4 -name terminal64.exe -type f 2>/dev/null | head -1
+# "The file exists" is NOT the same as "the install finished". The
+# installer forks and keeps writing after its launcher returns, so if the
+# container dies mid-install (which it did, repeatedly, while earlier bugs
+# were crash-looping it) a TRUNCATED terminal64.exe is left behind in the
+# persisted volume. Every later boot then reports "already installed" and
+# reuses a corrupt binary, which Wine rejects with
+#   ShellExecuteEx failed: Bad EXE format
+# forever, immune to rebuilding the image. So validate the file, don't
+# just look for it: real PE executables start with "MZ", and a genuine
+# terminal64.exe is tens of MB.
+MIN_TERMINAL_BYTES=5000000
+
+terminal_is_valid() {
+    f="$1"
+    [ -n "${f}" ] && [ -f "${f}" ] || return 1
+    size="$(wc -c < "${f}" 2>/dev/null || echo 0)"
+    [ "${size}" -ge "${MIN_TERMINAL_BYTES}" ] || {
+        log "terminal64.exe is only ${size} bytes — truncated, not a real install"
+        return 1
+    }
+    magic="$(head -c 2 "${f}" 2>/dev/null | od -An -c | tr -d ' \n')"
+    [ "${magic}" = "MZ" ] || {
+        log "terminal64.exe does not start with the MZ PE signature (got '${magic}')"
+        return 1
+    }
+    return 0
 }
 
-TERMINAL="$(find_terminal)"
+find_terminal() {
+    for f in $(find "${WINEPREFIX}/drive_c" -maxdepth 4 -name terminal64.exe -type f 2>/dev/null); do
+        if terminal_is_valid "${f}"; then
+            echo "${f}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+TERMINAL="$(find_terminal || true)"
 if [ -z "${TERMINAL}" ]; then
-    log "MT5 terminal not present in the prefix — installing (first boot)."
+    log "No valid MT5 terminal in the prefix — installing."
+    # Clear any partial install so the installer starts from clean state.
+    rm -rf "${WINEPREFIX}/drive_c/Program Files/MetaTrader 5" 2>/dev/null || true
     log "Downloading ${MT5_SETUP_URL}"
     if ! curl -fsSL -o /tmp/mt5setup.exe "${MT5_SETUP_URL}"; then
         log "FATAL: could not download the MT5 installer."
@@ -82,18 +130,27 @@ if [ -z "${TERMINAL}" ]; then
     fi
     log "Running the MT5 installer under Wine (this takes a few minutes)..."
     "${WINE_BIN}" /tmp/mt5setup.exe /auto || log "installer returned non-zero; checking anyway"
-    # The installer forks and keeps working after its launcher returns.
+
+    # Wait for the installer to actually FINISH, not merely for the file to
+    # show up: wineserver -w blocks until every Wine process has exited,
+    # which is the real completion signal for a forking installer.
+    log "Waiting for the installer to finish writing..."
+    wineserver -w 2>/dev/null || true
+
+    # Then poll for a file that passes validation, not just one that exists.
     for _ in $(seq 1 60); do
-        TERMINAL="$(find_terminal)"
+        TERMINAL="$(find_terminal || true)"
         [ -n "${TERMINAL}" ] && break
         sleep 5
     done
-    wineserver -w 2>/dev/null || true
     rm -f /tmp/mt5setup.exe
     if [ -z "${TERMINAL}" ]; then
-        log "FATAL: the installer ran but terminal64.exe never appeared."
-        log "Most likely your broker requires their own branded installer —"
-        log "set MT5_SETUP_URL to it and restart. See docker/mt5-bridge/README.md."
+        log "FATAL: the installer ran but produced no valid terminal64.exe."
+        log "If the messages above mention a truncated file, the install was"
+        log "interrupted — just restart this container and it will retry."
+        log "Otherwise your broker likely requires their own branded"
+        log "installer: set MT5_SETUP_URL to it and restart."
+        log "See docker/mt5-bridge/README.md."
         exit 1
     fi
     log "MT5 installed at ${TERMINAL}"
