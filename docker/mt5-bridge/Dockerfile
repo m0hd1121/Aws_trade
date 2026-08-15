@@ -69,10 +69,17 @@ RUN curl -fsSL -o /tmp/python-installer.exe "${WINE_PYTHON_URL}" && \
     rm -f /tmp/python-installer.exe && \
     test -f "${WINE_PYTHON}"
 
+# rpyc is PINNED, and pinned to the SAME version as the Linux side of the
+# bridge (see the runtime stage below). RPyC is a wire protocol spoken
+# between the two: letting one side float to whatever is current while the
+# other is pinned invites protocol/serialization mismatches that surface
+# as obscure errors at connect time rather than as an honest version
+# complaint. If you bump one, bump both.
+ARG RPYC_VERSION=5.3.1
 RUN with-xvfb.sh wine "${WINE_PYTHON}" -m pip install \
         --no-cache-dir --upgrade pip && \
     with-xvfb.sh wine "${WINE_PYTHON}" -m pip install \
-        --no-cache-dir MetaTrader5 rpyc plumbum && \
+        --no-cache-dir MetaTrader5 "rpyc==${RPYC_VERSION}" plumbum && \
     wineserver -w
 
 # ---------------------------------------------------------------------
@@ -116,8 +123,10 @@ RUN apk add --no-cache py3-numpy || \
 # its declared deps pin numpy==1.21.4 (no wheel for modern Python) plus a
 # pile of unrelated packaging tools. numpy above and rpyc here are its
 # only real runtime needs.
+# Keep RPYC_VERSION identical to the builder stage's — see the note there.
+ARG RPYC_VERSION=5.3.1
 RUN pip install --no-cache-dir --break-system-packages --no-deps mt5linux==0.1.9 && \
-    pip install --no-cache-dir --break-system-packages rpyc==5.3.1 && \
+    pip install --no-cache-dir --break-system-packages "rpyc==${RPYC_VERSION}" && \
     python3 -c "import mt5linux"
 
 COPY --from=builder /opt/wineprefix /opt/wineprefix

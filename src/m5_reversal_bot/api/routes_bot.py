@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import set_key
 from fastapi import APIRouter, HTTPException
+from tenacity import RetryError
 
 from ..bot.controller import InvalidTransition
 from ..core.config import REPO_ROOT, app_settings
@@ -17,6 +18,33 @@ from .state import get_controller
 log = logging.getLogger("m5_reversal_bot.api.routes_bot")
 
 router = APIRouter()
+
+
+def _describe_failure(exc: BaseException) -> str:
+    """Render a connection failure so the panel shows something actionable.
+
+    The connect paths are wrapped in tenacity's @retry, so what escapes is
+    a RetryError whose str() is `RetryError[<Future at 0x... state=finished
+    raised ValueError>]` — it names the exception TYPE and hides its
+    message, which is the only part that says what actually went wrong.
+    Unwrap to the final attempt's exception, and always include the type,
+    since some failures (notably from the RPyC bridge) carry an empty
+    message and would otherwise render as a blank string.
+    """
+    cause: BaseException = exc
+    if isinstance(exc, RetryError) and exc.last_attempt.failed:
+        cause = exc.last_attempt.exception() or exc
+
+    parts = []
+    seen = 0
+    # Walk __cause__/__context__ a little: the useful detail is often in
+    # the exception that was chained, not the one that surfaced.
+    while cause is not None and seen < 3:
+        detail = str(cause).strip()
+        parts.append(f"{type(cause).__name__}: {detail}" if detail else type(cause).__name__)
+        cause = cause.__cause__ or cause.__context__
+        seen += 1
+    return " <- ".join(parts)
 
 
 @router.post("/start")
@@ -128,7 +156,8 @@ def broker_connect(body: BrokerConnectRequest):
             runner.adapter.connect()
             return {"success": True, "live": True, "message": "Reconnected with the updated credentials."}
         except Exception as e:
-            return {"success": False, "live": True, "message": f"Reconnect failed: {e}"}
+            log.exception("broker reconnect failed")
+            return {"success": False, "live": True, "message": f"Reconnect failed: {_describe_failure(e)}"}
 
     # Bot isn't running yet — test connectivity with a throwaway feed
     # rather than silently just saving unverified credentials.
@@ -144,4 +173,5 @@ def broker_connect(body: BrokerConnectRequest):
             return {"success": True, "live": False, "message": "Test connection OK. Start Bot to begin trading."}
         return {"success": False, "live": False, "message": "Connected but terminal reports not-ready — check server/login."}
     except Exception as e:
-        return {"success": False, "live": False, "message": f"Test connection failed: {e}"}
+        log.exception("broker test connection failed")
+        return {"success": False, "live": False, "message": f"Test connection failed: {_describe_failure(e)}"}
