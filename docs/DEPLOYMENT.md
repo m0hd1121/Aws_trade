@@ -83,8 +83,10 @@ docker compose logs -f mt5-bridge     # the MT5 terminal installs on FIRST BOOT,
   It has **not** been end-to-end verified against a live broker
   connection in this repository — there's no Docker daemon or broker
   account available to test it here. Expect to iterate against your
-  specific broker's terminal build. Alpine/musl + Wine is also a
-  less-trodden path than Debian/glibc for MT5 specifically.
+  specific broker's terminal build. The base image is Debian on purpose:
+  on Alpine's musl-based Wine, `import MetaTrader5` hangs indefinitely
+  inside the Wine-side Python, while everything else works — see
+  docker/mt5-bridge/README.md.
 - Most brokers ship their own branded MT5 installer (to preselect their
   server list) — set the `MT5_SETUP_URL` environment variable to it
   instead of the generic MetaQuotes one if yours does. It's read on the
@@ -169,10 +171,9 @@ second Wine-side Python, not the tens of MB the app itself needs. On a
 | `mt5-bridge` container | 600MB cap (`docker-compose.mt5-bridge.yml`) |
 | **Total** | **~1.1-1.2GB against 1GB physical** |
 
-The bridge image is built to keep that number down: an Alpine base rather
-than Debian+WineHQ, no i386 architecture, the 32-bit Wine tree deleted,
-no winetricks runtimes, and `explorer.exe`/`plugplay.exe` stopped once the
-terminal is up. It also defers the Wine prefix init and the MT5 install
+The bridge image keeps that number down by installing no winetricks
+runtimes and stopping `explorer.exe`/`plugplay.exe` once the terminal is
+up. It also defers the Wine prefix init and the MT5 install
 from build time to first boot, into the persisted `mt5-wine-prefix`
 volume — so the heavy one-time work can fail and be retried with a
 container restart instead of taking a 20-minute image build down with it.

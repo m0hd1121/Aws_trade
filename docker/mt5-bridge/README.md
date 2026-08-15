@@ -1,6 +1,6 @@
 # MT5 Wine Bridge
 
-Runs a real MetaTrader 5 terminal under Wine, in a small Alpine
+Runs a real MetaTrader 5 terminal under Wine, in a Debian
 container, and exposes it over the
 [`mt5linux`](https://github.com/lucas-campagna/mt5linux) RPyC bridge — so
 the main bot can run PAPER/DEMO/LIVE trading from a plain Linux host with
@@ -58,7 +58,7 @@ than the obvious version:
 
 | Happens at **build** time | Happens at **first boot** (into the persisted volume) |
 |---|---|
-| Alpine + Wine packages | `wineboot --init` (failure tolerated) |
+| Debian + WineHQ packages | `wineboot --init` (failure tolerated) |
 | Windows Python install under Wine | MT5 terminal download + install |
 | `MetaTrader5` / `rpyc` / `plumbum` pip install | Terminal config tuning |
 | Linux-side `mt5linux` | Starting the terminal + RPyC server |
@@ -74,8 +74,7 @@ what fixes the `wineboot --init` "boot event wait timed out" /
 
 Structure and most of the size/robustness wins are adapted from
 [`lucas-campagna/mt5linux@docker-image-optimization`](https://github.com/lucas-campagna/mt5linux/tree/docker-image-optimization/docker):
-Alpine instead of Debian+WineHQ, no i386 architecture, the 32-bit Wine
-tree deleted, a multi-stage build, `WINEDLLOVERRIDES=mscoree=` to
+a multi-stage build, `WINEDLLOVERRIDES=mscoree=` to
 suppress Wine's Mono prompt, stopping unneeded Wine services after boot,
 and the build-time/runtime split above.
 
@@ -184,12 +183,16 @@ phase with a `[mt5-bridge]` prefix.
   connection in this repository — there's no Docker daemon available in
   the environment it was written in, let alone a broker account. Treat
   first boot as a real install against your specific broker.
-- **Alpine/musl + Wine is a less-trodden path** than Debian/glibc for MT5
-  specifically, and MT5-under-Wine is finicky in general (see the
+- **Do not switch this image to Alpine.** It was Alpine for a while and
+  builds fine there — smaller and faster. But on Alpine's musl-based Wine,
+  `import MetaTrader5` hangs forever inside the Wine-side Python: no CPU
+  burned, never returns, confirmed with a 180s standalone timeout.
+  Everything else worked on Alpine (Wine 9.0 64-bit, the MT5 install, the
+  RPyC transport, and `import rpyc` in the same interpreter returning in
+  under a second), so it is specifically that compiled `.pyd` failing to
+  load under musl. MT5-under-Wine is finicky even on glibc (see the
   [MQL5 forum](https://www.mql5.com/en/forum/371932) threads on Wine
-  version regressions). If musl turns out to be the problem, the fallback
-  is a Debian base with the same build/runtime split — the structure here
-  is what matters, not the distro.
+  version regressions); don't add musl to the pile.
 - Wine running a GUI Windows app in a container is inherently more
   fragile than a real Windows VPS or a paid cloud MT5 bridge (e.g.
   MetaApi). Expect to re-verify after MT5 terminal updates.

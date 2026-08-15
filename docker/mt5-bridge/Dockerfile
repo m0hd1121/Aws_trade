@@ -2,15 +2,25 @@
 # container — lets the main app run on a plain Linux host with zero Wine
 # installed there, while this container owns the only Wine instance.
 #
-# Structure and most of the size/robustness wins here are adapted from
+# Structure and most of the robustness wins here are adapted from
 # lucas-campagna/mt5linux's `docker-image-optimization` branch:
 #   https://github.com/lucas-campagna/mt5linux/tree/docker-image-optimization/docker
-# Specifically: Alpine instead of Debian+WineHQ, a multi-stage build so
-# none of the build tooling lands in the runtime image,
-# WINEDLLOVERRIDES=mscoree= to
-# suppress Wine's Mono prompt, and — the important one — moving Wine
-# prefix init and the MT5 install OUT of the build and into runtime, where
-# failure is tolerated and retried instead of killing the whole build.
+# A multi-stage build so none of the build tooling lands in the runtime
+# image, WINEDLLOVERRIDES=mscoree= to suppress Wine's Mono prompt, and —
+# the important one — moving Wine prefix init and the MT5 install OUT of
+# the build and into runtime, where failure is tolerated and retried
+# instead of killing the whole build.
+#
+# BASE IMAGE: Debian, NOT Alpine. That branch uses Alpine, and this file
+# did too for a while — it builds fine and is much smaller. But on
+# Alpine's musl-based Wine, `import MetaTrader5` HANGS FOREVER inside the
+# Wine-side Python: no CPU burned, never returns, verified with a 180s
+# standalone timeout. Everything else worked there (Wine 9.0 64-bit, the
+# MT5 install, the RPyC transport, `import rpyc` in the same interpreter
+# returning in under a second) — it is specifically that compiled .pyd
+# failing to load under musl. Debian/glibc is the well-trodden path for
+# MT5 under Wine. Do not "optimize" this back to Alpine without actually
+# testing that import.
 #
 # Two things from that branch are deliberately NOT copied, because they're
 # broken (see entrypoint.sh for the corrected versions):
@@ -35,15 +45,26 @@
 # then hand the finished prefix to the runtime stage. Everything used to
 # get there (curl, pip, build tooling) is left behind in this stage.
 # ---------------------------------------------------------------------
-FROM alpine:3.20 AS builder
+FROM debian:bookworm-slim AS builder
 
-ENV WINEPREFIX=/opt/wineprefix \
+ENV DEBIAN_FRONTEND=noninteractive \
+    WINEPREFIX=/opt/wineprefix \
     WINEARCH=win64 \
     WINEDEBUG=-all \
     WINEDLLOVERRIDES="mscoree=" \
     DISPLAY=:99
 
-RUN apk add --no-cache wine xvfb curl xdpyinfo
+# WineHQ's own packages rather than Debian's older bundled ones. i386 is
+# added because winehq-stable depends on it; the 32-bit tree is left in
+# place (see the note in the runtime stage about not deleting it).
+RUN dpkg --add-architecture i386 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        wget gnupg2 ca-certificates curl xvfb x11-utils winbind \
+    && mkdir -pm755 /etc/apt/keyrings \
+    && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
+    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
+    && apt-get update && apt-get install -y --no-install-recommends winehq-stable \
+    && rm -rf /var/lib/apt/lists/*
 
 # Windows-side Python. Only three packages ever run under Wine:
 #   MetaTrader5 — the real broker API
@@ -86,38 +107,34 @@ RUN with-xvfb.sh wine "${WINE_PYTHON}" -m pip install \
 # Runtime: Alpine + Wine + a Linux python to drive mt5linux. No compiler,
 # no build deps.
 # ---------------------------------------------------------------------
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache \
-        wine \
-        xvfb \
-        xdpyinfo \
-        python3 \
-        py3-pip \
-        curl \
-        procps
+ENV DEBIAN_FRONTEND=noninteractive
+
+# xdpyinfo lives in x11-utils on Debian (on Alpine it is its own package —
+# a difference that broke an earlier build). procps provides pgrep, used to
+# check whether terminal64.exe is actually running.
+RUN dpkg --add-architecture i386 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        wget gnupg2 ca-certificates curl xvfb x11-utils winbind procps \
+        python3 python3-pip python3-numpy \
+    && mkdir -pm755 /etc/apt/keyrings \
+    && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
+    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
+    && apt-get update && apt-get install -y --no-install-recommends winehq-stable \
+    && rm -rf /var/lib/apt/lists/*
 
 # NOTE: an earlier version deleted /usr/lib/wine/i386-windows and
 # /usr/lib/wine/i386-unix here, copying a size optimization from upstream
-# (which drops only i386-windows). Dropped, for two reasons:
-#
-#   1. It optimizes the wrong resource. Those files cost DISK, not RAM,
-#      and RAM is the binding constraint on a small VPS — so the saving
-#      bought nothing against the actual limit while adding risk.
-#   2. Deleting paths that may not exist under these names on Alpine is a
-#      silent no-op that looks like it did something, which makes it a
-#      misleading suspect when Wine later misbehaves.
-#
-# Not reintroducing it without a real build to test against.
+# (which drops only i386-windows). Do not reintroduce it. It optimizes the
+# wrong resource — those files cost DISK, not RAM, and RAM is the binding
+# constraint on a small VPS — so it buys nothing against the actual limit
+# while risking Wine's loader in ways that are tedious to diagnose.
 
 # numpy is NOT optional despite --no-deps below: mt5linux/__init__.py does
 # `from numpy import array` at module import time, so `python -m mt5linux`
-# cannot even start without it. Alpine's own py3-numpy is prebuilt for
-# musl, which avoids depending on numpy publishing a musllinux wheel and
-# avoids needing a compiler in the image; pip is a fallback if the apk
-# package is ever unavailable.
-RUN apk add --no-cache py3-numpy || \
-    pip install --no-cache-dir --break-system-packages numpy
+# cannot even start without it. Installed as python3-numpy in the apt line
+# above — distro-packaged, so no wheel availability or compiler needed.
 
 # Linux-side mt5linux. --no-deps for the same reason as the main image:
 # its declared deps pin numpy==1.21.4 (no wheel for modern Python) plus a
