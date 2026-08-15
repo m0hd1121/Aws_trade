@@ -9,7 +9,14 @@ services:
       dockerfile: docker/Dockerfile
     image: m5-reversal-bot:latest
     ports:
-      - "8000:8000"
+      # DASHBOARD_BIND controls which host interface the dashboard is
+      # reachable on. Default 0.0.0.0 = the public internet, which is only
+      # appropriate with DASHBOARD_USERNAME/PASSWORD set (and ideally a
+      # firewall). Set DASHBOARD_BIND=127.0.0.1 to expose it to the VPS
+      # itself only and reach it over an SSH tunnel:
+      #   ssh -N -L 8000:localhost:8000 root@your-vps
+      # That needs no third party, no open port, and no shared password.
+      - "${DASHBOARD_BIND:-0.0.0.0}:8000:8000"
     env_file:
       - ../.env
     environment:

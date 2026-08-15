@@ -226,7 +226,41 @@ real broker credentials start flowing through the Broker Connection
 panel. Leave both blank to run open (fine behind your own VPN/reverse
 proxy, the existing default).
 
-## Exposing the dashboard safely (Cloudflare Tunnel)
+## Exposing the dashboard safely
+
+The dashboard accepts live broker credentials, so how it's reachable
+matters. Three options, strongest first:
+
+**1. SSH tunnel (recommended if you're not using Cloudflare).** Set
+`DASHBOARD_BIND=127.0.0.1` in `.env` and the port is published only on
+the VPS's loopback — nothing is reachable from the internet at all. From
+your own machine:
+
+```bash
+ssh -N -L 8000:localhost:8000 root@your-vps    # leave running
+# then open http://localhost:8000 locally
+```
+
+No open port, no shared password, no third party. The cost is that you
+need the SSH session up while you're watching the dashboard.
+
+**2. Cloudflare Tunnel** — see below. Similar security, more convenient
+(a normal URL, SSO), at the cost of routing through Cloudflare.
+
+**3. Public port + Basic Auth.** `DASHBOARD_BIND=0.0.0.0` (the default)
+with `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD` set. Workable, but it's a
+single shared secret over plain HTTP — pair it with a firewall
+restricting port 8000 to your own IP:
+
+```bash
+ufw allow OpenSSH
+ufw allow from YOUR.HOME.IP.ADDR to any port 8000 proto tcp
+ufw --force enable
+```
+
+Never run `DASHBOARD_BIND=0.0.0.0` with the auth variables blank.
+
+### Cloudflare Tunnel
 
 Basic Auth over plain HTTP on a public port is a stopgap: one shared
 secret, sent in a reversible encoding, on a port anyone can find. Since
