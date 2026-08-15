@@ -44,6 +44,20 @@ class MT5ExecutionAdapter(ExecutionAdapter):
                         "and point MT5_BRIDGE_HOST/MT5_BRIDGE_PORT at the Wine+MT5 "
                         "bridge container — see docker/docker-compose.mt5-bridge.yml."
                     ) from e
+                # mt5linux calls rpyc.classic.connect() with no config, so
+                # there is no API to pass a per-connection timeout through.
+                # RPyC reads its default from this dict at connect time, so
+                # raising it here is the available lever. Needed because the
+                # first thing mt5linux does after connecting is
+                # `import MetaTrader5` on the Wine side, which routinely
+                # exceeds RPyC's 30s default and then fails as an opaque
+                # "TimeoutError: result expired".
+                try:
+                    from rpyc.core.protocol import DEFAULT_CONFIG
+
+                    DEFAULT_CONFIG["sync_request_timeout"] = self._settings.bridge_request_timeout
+                except Exception:  # pragma: no cover - rpyc internals moved
+                    pass
                 self._mt5 = _MT5Bridge(host=self._settings.bridge_host, port=self._settings.bridge_port)
             else:
                 try:

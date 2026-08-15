@@ -39,6 +39,16 @@ class MT5Settings(BaseSettings):
     bridge_host: str = "127.0.0.1"
     bridge_port: int = 8001
 
+    # Seconds to wait for a single RPyC call to the bridge to return.
+    # RPyC's own default is 30s, which is too tight for this bridge: the
+    # very first call mt5linux makes is `import MetaTrader5` on the Wine
+    # side, and that import is slow (it is not a pure import — it reaches
+    # for the terminal) especially on a small VPS where Wine is competing
+    # for CPU and may be swapping. Exceeding it surfaces as an opaque
+    # "TimeoutError: result expired" rather than anything about MT5.
+    # Only applies to bridge_mode="mt5linux".
+    bridge_request_timeout: int = 300
+
     # These fields are mutated live by POST /api/bot/broker-connect (see
     # api/routes_bot.py) so an operator can (re)connect from the dashboard
     # without editing .env and restarting the process. Mutating this same
