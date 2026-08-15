@@ -226,6 +226,38 @@ real broker credentials start flowing through the Broker Connection
 panel. Leave both blank to run open (fine behind your own VPN/reverse
 proxy, the existing default).
 
+## Exposing the dashboard safely (Cloudflare Tunnel)
+
+Basic Auth over plain HTTP on a public port is a stopgap: one shared
+secret, sent in a reversible encoding, on a port anyone can find. Since
+that panel accepts live broker credentials, prefer a tunnel:
+
+```bash
+./setup.sh --tunnel
+```
+
+This adds a `cloudflared` container and **stops publishing port 8000 on
+the host entirely** — the droplet makes an outbound connection to
+Cloudflare and traffic returns down it, so there is no inbound port to
+scan. Free tier is sufficient. It needs `CLOUDFLARE_TUNNEL_TOKEN` in
+`.env`; the setup steps are in the header of
+[`docker/docker-compose.cloudflared.yml`](../docker/docker-compose.cloudflared.yml).
+
+Two things worth knowing:
+
+- Put **Cloudflare Access** in front of the hostname (Zero Trust → Access
+  → Applications → self-hosted). That authenticates viewers with SSO or
+  email OTP *before* any request reaches this app, which is a genuine
+  improvement over a shared password rather than a second copy of one.
+  The dashboard's WebSocket works through both Tunnel and Access.
+- Requires Docker Compose **2.24+**. The overlay closes the port with
+  `ports: !reset []`, and older Compose silently ignores that tag —
+  leaving the port open while appearing to work. `setup.sh --tunnel`
+  checks the version and refuses rather than half-applying it.
+
+Costs about 30-50MB RAM (capped at 96MB), which is affordable even in the
+1GB budget above.
+
 ## Health checks
 
 - `GET /api/healthz` — process liveness.

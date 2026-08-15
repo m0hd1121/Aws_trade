@@ -9,13 +9,19 @@
 #   ./setup.sh --no-bridge      # app only — for BACKTEST/dashboard use,
 #                               #   or if you already run MT5 elsewhere
 #                               #   (bridge_mode=local, a Windows VPS, etc.)
+#   ./setup.sh --tunnel         # also run a Cloudflare Tunnel and stop
+#                               #   publishing port 8000 on the host.
+#                               #   Needs CLOUDFLARE_TUNNEL_TOKEN in .env —
+#                               #   see docker/docker-compose.cloudflared.yml
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 WITH_BRIDGE=1
+WITH_TUNNEL=0
 for arg in "$@"; do
   case "$arg" in
     --no-bridge) WITH_BRIDGE=0 ;;
+    --tunnel) WITH_TUNNEL=1 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -103,7 +109,39 @@ if [ "$WITH_BRIDGE" -eq 1 ]; then
   set_env MT5_BRIDGE_PORT 8001
 fi
 
-COMPOSE_FILES=(-f docker/docker-compose.yml)
+if [ "$WITH_TUNNEL" -eq 1 ]; then
+  # The tunnel overlay closes the published port via `ports: !reset []`.
+  # On Compose older than 2.24 that tag is not understood and the port
+  # would stay open to the internet — a silent downgrade of exactly the
+  # thing --tunnel exists to provide. Refuse rather than half-apply it.
+  compose_ver="$(docker compose version --short 2>/dev/null | sed 's/^v//')"
+  if [ "$(printf '%s\n2.24.0\n' "$compose_ver" | sort -V | head -1)" != "2.24.0" ]; then
+    echo "--tunnel needs Docker Compose 2.24+ (found ${compose_ver:-unknown})." >&2
+    echo "Older versions ignore the 'ports: !reset []' override, which would" >&2
+    echo "leave port 8000 open on this host. Upgrade Compose, then retry." >&2
+    exit 1
+  fi
+
+  if ! grep -qE '^CLOUDFLARE_TUNNEL_TOKEN=.+' .env; then
+    cat >&2 <<'EOF'
+--tunnel needs a tunnel token, and .env has no CLOUDFLARE_TUNNEL_TOKEN set.
+
+Get one (free): Cloudflare Zero Trust dashboard -> Networks -> Tunnels ->
+Create a tunnel -> "Cloudflared" -> name it -> copy the token. Then:
+
+  echo 'CLOUDFLARE_TUNNEL_TOKEN=<paste-token-here>' >> .env
+
+and re-run this script. Full walkthrough, including the Public Hostname
+and Cloudflare Access steps, is in docker/docker-compose.cloudflared.yml.
+EOF
+    exit 1
+  fi
+fi
+
+# --env-file is explicit because Compose otherwise resolves ${VAR}
+# interpolation against the FIRST compose file's directory (docker/),
+# not the repo root — so a token in ./.env would be silently invisible.
+COMPOSE_FILES=(--env-file .env -f docker/docker-compose.yml)
 if [ "$WITH_BRIDGE" -eq 1 ]; then
   COMPOSE_FILES+=(-f docker/docker-compose.mt5-bridge.yml)
   echo "Building app + Wine/MT5 bridge."
@@ -112,6 +150,12 @@ if [ "$WITH_BRIDGE" -eq 1 ]; then
   echo "watch it with: docker compose ${COMPOSE_FILES[*]} logs -f mt5-bridge"
 else
   echo "Building app only (--no-bridge: BACKTEST/dashboard, or MT5 reached some other way)."
+fi
+
+# Added last so its `ports: []` override of m5-bot wins over the base file.
+if [ "$WITH_TUNNEL" -eq 1 ]; then
+  COMPOSE_FILES+=(-f docker/docker-compose.cloudflared.yml)
+  echo "Cloudflare Tunnel enabled — port 8000 will NOT be published on this host."
 fi
 
 # Built one image at a time on purpose: `up -d --build` hands both images
@@ -128,7 +172,15 @@ docker compose "${COMPOSE_FILES[@]}" up -d
 echo
 echo -n "Waiting for the app to become healthy"
 for _ in $(seq 1 60); do
-  if curl -sf http://localhost:8000/api/healthz > /dev/null 2>&1; then
+  # With --tunnel there is no published host port to curl, so probe from
+  # inside the container instead (its image ships curl for HEALTHCHECK).
+  if [ "$WITH_TUNNEL" -eq 1 ]; then
+    probe=(docker compose "${COMPOSE_FILES[@]}" exec -T m5-bot
+           curl -sf http://localhost:8000/api/healthz)
+  else
+    probe=(curl -sf http://localhost:8000/api/healthz)
+  fi
+  if "${probe[@]}" > /dev/null 2>&1; then
     echo " — up."
     break
   fi
@@ -136,10 +188,16 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
+if [ "$WITH_TUNNEL" -eq 1 ]; then
+  DASHBOARD_URL="the hostname you mapped to http://m5-bot:8000 in the Cloudflare tunnel"
+else
+  DASHBOARD_URL="http://localhost:8000"
+fi
+
 cat <<EOF
 
 ======================================================================
- Dashboard: http://localhost:8000
+ Dashboard: ${DASHBOARD_URL}
 
  Next steps:
    1. Open the dashboard.

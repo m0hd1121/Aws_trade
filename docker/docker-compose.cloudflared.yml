@@ -1,0 +1,51 @@
+# Overlay putting a Cloudflare Tunnel in front of the dashboard, so the
+# droplet exposes NO inbound port at all — cloudflared makes an outbound
+# connection to Cloudflare, and traffic arrives back down that tunnel.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d
+#
+# or, from the repo root:  ./setup.sh --tunnel
+#
+# Stacks with the bridge overlay; order matters only in that later files
+# win on conflicts:
+#   -f docker-compose.yml -f docker-compose.mt5-bridge.yml -f docker-compose.cloudflared.yml
+#
+# Setup on the Cloudflare side (one time, ~2 minutes, free tier is fine):
+#   1. Zero Trust dashboard -> Networks -> Tunnels -> Create a tunnel
+#      -> "Cloudflared" -> name it -> copy the token it shows you.
+#   2. Put that token in .env as CLOUDFLARE_TUNNEL_TOKEN=...
+#   3. On the tunnel's "Public Hostname" tab, add a hostname pointing at
+#      service  http://m5-bot:8000
+#      ("m5-bot" is the compose service name — cloudflared reaches it over
+#      the internal Docker network, which is why no host port is needed.)
+#   4. Strongly recommended: Zero Trust -> Access -> Applications -> add a
+#      self-hosted app for that hostname, so Cloudflare authenticates
+#      viewers (SSO / email OTP) BEFORE any request reaches this app. That
+#      is a real improvement over DASHBOARD_USERNAME/PASSWORD, which is a
+#      single shared secret travelling over plain HTTP.
+
+services:
+  m5-bot:
+    # The point of the tunnel: nothing listens on a public interface.
+    #
+    # `!reset` is load-bearing. Compose MERGES list fields across overlay
+    # files by appending, so a plain `ports: []` here is a silent no-op —
+    # the "8000:8000" mapping from docker-compose.yml survives and the port
+    # stays open to the world, which is the exact opposite of the point.
+    # Verified with `docker compose config`. Needs Compose v2.24+.
+    ports: !reset []
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # Token passed via env rather than argv so it does not show up in
+    # `docker ps`, `ps aux`, or this file's rendered output.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env — see the header of this file}
+    depends_on:
+      - m5-bot
+    restart: unless-stopped
+    # cloudflared is a small Go binary; this is generous.
+    mem_limit: 96m
+    mem_reservation: 32m
+    cpus: 0.25
