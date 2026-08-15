@@ -138,6 +138,34 @@ EOF
   fi
 fi
 
+# Publishing the dashboard on a public interface with no credentials set
+# would expose the Broker Connection panel — which accepts live MT5
+# login/password — to anyone who finds the IP. Refuse that specific
+# combination; every other combination is the operator's call.
+bind_addr="$(grep -E '^DASHBOARD_BIND=' .env | tail -1 | cut -d= -f2- || true)"
+dash_user="$(grep -E '^DASHBOARD_USERNAME=' .env | tail -1 | cut -d= -f2- || true)"
+dash_pass="$(grep -E '^DASHBOARD_PASSWORD=' .env | tail -1 | cut -d= -f2- || true)"
+case "${bind_addr}" in
+  ''|127.0.0.1|localhost) ;;   # loopback only — nothing reachable off-host
+  *)
+    if [ -z "${dash_user}" ] || [ -z "${dash_pass}" ]; then
+      cat >&2 <<EOF
+Refusing to start: DASHBOARD_BIND=${bind_addr} publishes the dashboard on a
+public interface, but DASHBOARD_USERNAME/DASHBOARD_PASSWORD are empty. That
+would leave the Broker Connection panel — which takes your MT5 login and
+password — open to anyone who finds this server's IP.
+
+Set both in .env, e.g.:
+  sed -i 's/^DASHBOARD_USERNAME=.*/DASHBOARD_USERNAME=admin/' .env
+  sed -i "s|^DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=\$(openssl rand -base64 24)|" .env
+
+Or set DASHBOARD_BIND=127.0.0.1 to keep it reachable only via an SSH tunnel.
+EOF
+      exit 1
+    fi
+    ;;
+esac
+
 # --env-file is explicit because Compose otherwise resolves ${VAR}
 # interpolation against the FIRST compose file's directory (docker/),
 # not the repo root — so a token in ./.env would be silently invisible.
