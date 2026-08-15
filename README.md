@@ -102,7 +102,7 @@ mode/config, or pass `--autostart`.
 PYTHONPATH=src pytest tests/ -v
 ```
 
-44 tests, including the literal arithmetic from Section 11's Examples
+52 tests, including the literal arithmetic from Section 11's Examples
 A/B/C (the POI fallback nuance, the 8/12 spine-broken rejection, the
 10/12-killed-by-D1-filter case), Section 8.1's worked position-sizing
 examples, and a full sweep→CHoCH→score→fill→TP1→BE→hard-flat replay
