@@ -215,6 +215,16 @@ phase with a `[mt5-bridge]` prefix.
   finished starting or the login/password/server is wrong.
   `MT5_BRIDGE_HOST` must be `mt5-bridge` (the compose service name), not
   `127.0.0.1`, which would point the app container at itself.
+- **`MT5 initialize() failed: (-10005, 'IPC timeout')`.** `initialize()`
+  couldn't attach to a terminal. If you changed
+  `MT5_BRIDGE_TERMINAL_PATH` away from the default, confirm it matches
+  where MT5 is actually installed inside the bridge (default:
+  `C:\Program Files\MetaTrader 5\terminal64.exe`, which matches
+  `entrypoint.sh`'s fixed install location — leave it alone unless you
+  changed that too). Otherwise check that the terminal process itself is
+  actually up: `docker compose logs mt5-bridge | grep "MT5 terminal is
+  running"`. If it's missing, the terminal failed to start — see the
+  bridge log around that point for why.
 - **Wine crashes / the bridge stops responding.** The entrypoint's
   watchdog restarts both the RPyC server and the terminal automatically;
   `docker compose restart mt5-bridge` if it's wedged harder than that.

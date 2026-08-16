@@ -49,6 +49,20 @@ class MT5Settings(BaseSettings):
     # Only applies to bridge_mode="mt5linux".
     bridge_request_timeout: int = 300
 
+    # The WINDOWS-side path to terminal64.exe inside the bridge container,
+    # as Wine sees it — NOT a Linux path on this host. mt5.initialize()
+    # called with no path has to auto-detect an already-running terminal
+    # via Windows registry lookups, and a /portable-mode install (which is
+    # what docker/mt5-bridge/entrypoint.sh always uses) is not guaranteed
+    # to register there, so it can time out searching instead of attaching
+    # to the terminal that is, in fact, already running. Passing this path
+    # explicitly makes initialize() ATTACH to that existing process rather
+    # than search for or spawn a new one — this is standard, documented
+    # MetaTrader5-package behavior, not a bridge-specific workaround.
+    # Default matches entrypoint.sh's fixed install location exactly.
+    # Only applies to bridge_mode="mt5linux".
+    bridge_terminal_path: str = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+
     # These fields are mutated live by POST /api/bot/broker-connect (see
     # api/routes_bot.py) so an operator can (re)connect from the dashboard
     # without editing .env and restarting the process. Mutating this same

@@ -86,11 +86,17 @@ class MT5MarketDataFeed(MarketDataFeed):
     def connect(self) -> None:
         mt5 = self._import_mt5()
         kwargs = {}
-        # `path` is a local Windows filesystem path — meaningless for a
-        # remote mt5linux bridge, whose terminal path is fixed inside its
-        # own container.
-        if self._settings.bridge_mode == "local" and self._settings.terminal_path:
-            kwargs["path"] = self._settings.terminal_path
+        # `path` tells initialize() which terminal to ATTACH to rather than
+        # auto-detect (via Windows registry lookups that a /portable-mode
+        # install is not guaranteed to satisfy) or spawn a redundant new
+        # one. local mode uses this host's own configured path; mt5linux
+        # mode uses the bridge's fixed, known install location — see the
+        # comment on MT5Settings.bridge_terminal_path.
+        if self._settings.bridge_mode == "local":
+            if self._settings.terminal_path:
+                kwargs["path"] = self._settings.terminal_path
+        elif self._settings.bridge_terminal_path:
+            kwargs["path"] = self._settings.bridge_terminal_path
         if not mt5.initialize(**kwargs):
             raise MT5ConnectionError(f"MT5 initialize() failed: {mt5.last_error()}")
         if self._settings.login and self._settings.password and self._settings.server:

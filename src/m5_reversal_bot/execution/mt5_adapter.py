@@ -78,8 +78,14 @@ class MT5ExecutionAdapter(ExecutionAdapter):
     def connect(self) -> None:
         mt5 = self._import_mt5()
         kwargs = {}
-        if self._settings.bridge_mode == "local" and self._settings.terminal_path:
-            kwargs["path"] = self._settings.terminal_path
+        # See the matching comment in data/mt5_feed.py::connect() — path
+        # lets initialize() attach to the bridge's already-running terminal
+        # instead of timing out trying to auto-detect or spawn one.
+        if self._settings.bridge_mode == "local":
+            if self._settings.terminal_path:
+                kwargs["path"] = self._settings.terminal_path
+        elif self._settings.bridge_terminal_path:
+            kwargs["path"] = self._settings.bridge_terminal_path
         if not mt5.initialize(**kwargs):
             raise MT5AdapterError(f"MT5 initialize() failed: {mt5.last_error()}")
         if self._settings.login and self._settings.password and self._settings.server:
