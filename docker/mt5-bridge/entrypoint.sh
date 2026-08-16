@@ -36,10 +36,17 @@ log() { echo "[mt5-bridge] $*"; }
 # round-trip: "Bad EXE format" on a 64-bit binary, for instance, is a
 # 64-bit-support question, which these three lines answer directly.
 log "wine binary: ${WINE_BIN} ($(timeout 30 "${WINE_BIN}" --version 2>/dev/null || echo 'version unknown'))"
-if [ -d /usr/lib/wine/x86_64-windows ]; then
-    log "wine 64-bit support: present (/usr/lib/wine/x86_64-windows)"
+# The x86_64-windows tree lives in a different place per distro/packaging
+# (/usr/lib/wine on Alpine, /opt/wine-*/lib*/wine or
+# /usr/lib/x86_64-linux-gnu/wine with WineHQ's Debian packages), so search
+# rather than assume one path — hardcoding Alpine's location made a
+# perfectly working Debian install report "64-bit support: MISSING".
+WINE64_DIR="$(find /usr/lib /usr/lib64 /opt -maxdepth 5 -type d -name 'x86_64-windows' 2>/dev/null | head -1)"
+if [ -n "${WINE64_DIR}" ]; then
+    log "wine 64-bit support: present (${WINE64_DIR})"
 else
-    log "wine 64-bit support: MISSING — 64-bit .exe files will not run"
+    log "wine 64-bit support: not found by path search — this is only a hint;"
+    log "  trust the builder stage's 64-bit Python install over this line."
 fi
 log "wineprefix: ${WINEPREFIX} (WINEARCH=${WINEARCH:-unset})"
 
