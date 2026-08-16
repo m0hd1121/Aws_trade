@@ -174,6 +174,43 @@ ensure_wine_packages() {
 }
 ensure_wine_packages
 
+# --- Visual C++ 2019 redistributable -----------------------------------
+# Confirmed by a standalone test, not a guess: `import MetaTrader5` under
+# Wine aborts with
+#   wine: Call ... to unimplemented function ucrtbase.dll.crealf, aborting
+# — Wine's own built-in reimplementation of ucrtbase.dll is missing at
+# least that C99 complex-math symbol, which MetaTrader5's compiled .pyd
+# calls. Installing Microsoft's real redistributable replaces Wine's
+# ucrtbase.dll/vcruntime140.dll with the genuine ones, which is the
+# standard fix for exactly this class of "unimplemented function, starting
+# debugger" failure. (This is also the most likely explanation for the
+# EARLIER symptom on a since-abandoned Alpine build, where the same import
+# hung forever with zero CPU: Wine's crash-debugger launch attempt with
+# nothing to interact with it.)
+#
+# winetricks tracks what it already installed in $WINEPREFIX/winetricks.log
+# — checked first so this is a no-op on every boot after the first.
+ensure_vcrun() {
+    tricks_log="${WINEPREFIX}/winetricks.log"
+    if [ -f "${tricks_log}" ] && grep -qx vcrun2019 "${tricks_log}" 2>/dev/null; then
+        log "vcrun2019 already installed in the prefix"
+        return 0
+    fi
+    log "Installing the Visual C++ 2019 redistributable (vcrun2019)..."
+    # Explicit rather than relying on winetricks' own wine64-vs-wine
+    # auto-detection, so it always matches what the rest of this script uses.
+    if WINE="${WINE_BIN}" timeout 300 winetricks -q vcrun2019 >/tmp/winetricks.log 2>&1; then
+        log "vcrun2019 installed"
+    else
+        log "WARNING: vcrun2019 install failed or timed out."
+        log "Last output:"
+        tail -n 20 /tmp/winetricks.log 2>/dev/null | sed 's/^/    /'
+        log "MetaTrader5 will likely still fail to import until this succeeds —"
+        log "restarting the container retries it."
+    fi
+}
+ensure_vcrun
+
 # --- MT5 terminal (first boot only) ----------------------------------
 # "The file exists" is NOT the same as "the install finished". The
 # installer forks and keeps writing after its launcher returns, so if the

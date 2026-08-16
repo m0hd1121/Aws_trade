@@ -170,12 +170,15 @@ second Wine-side Python, not the tens of MB the app itself needs. On a
 |---|---|
 | OS + Docker daemon | ~150-250MB |
 | `m5-bot` container | 320MB cap (`docker-compose.yml`) |
-| `mt5-bridge` container | 600MB cap (`docker-compose.mt5-bridge.yml`) |
-| **Total** | **~1.1-1.2GB against 1GB physical** |
+| `mt5-bridge` container | 1200MB cap (`docker-compose.mt5-bridge.yml`) |
+| **Total** | **~1.7-1.8GB against 1GB physical** |
 
-The bridge image keeps that number down by installing no winetricks
-runtimes and stopping `explorer.exe`/`plugplay.exe` once the terminal is
-up. It also defers the Wine prefix init and the MT5 install
+The bridge's cap is sized for its peak (the MT5 install plus the Visual
+C++ redistributable install that `MetaTrader5`'s Python package turns out
+to actually need — see `docker/mt5-bridge/README.md`), not its steady
+state, and leans on swap to cover the deficit above. It stops
+`explorer.exe`/`plugplay.exe` once the terminal is up to keep steady-state
+usage down. It also defers the Wine prefix init and the MT5 install
 from build time to first boot, into the persisted `mt5-wine-prefix`
 volume — so the heavy one-time work can fail and be retried with a
 container restart instead of taking a 20-minute image build down with it.

@@ -12,15 +12,18 @@
 # instead of killing the whole build.
 #
 # BASE IMAGE: Debian, NOT Alpine. That branch uses Alpine, and this file
-# did too for a while — it builds fine and is much smaller. But on
-# Alpine's musl-based Wine, `import MetaTrader5` HANGS FOREVER inside the
-# Wine-side Python: no CPU burned, never returns, verified with a 180s
-# standalone timeout. Everything else worked there (Wine 9.0 64-bit, the
-# MT5 install, the RPyC transport, `import rpyc` in the same interpreter
-# returning in under a second) — it is specifically that compiled .pyd
-# failing to load under musl. Debian/glibc is the well-trodden path for
-# MT5 under Wine. Do not "optimize" this back to Alpine without actually
-# testing that import.
+# did too for a while — it builds fine and is much smaller. `import
+# MetaTrader5` HUNG FOREVER there (no CPU burned, never returns, verified
+# with a 180s standalone timeout), initially attributed to musl. That
+# attribution is now doubtful: the same import later ABORTED on this
+# Debian/glibc image with "unimplemented function ucrtbase.dll.crealf" —
+# see entrypoint.sh's ensure_vcrun — which is the more likely real cause
+# of the Alpine hang too (Wine trying to launch its crash debugger with
+# nothing able to interact with it), not a musl-specific defect. Never
+# re-tested on Alpine with vcrun2019 installed, so musl is unconfirmed as
+# the cause, not cleared as safe. Debian/glibc is the well-trodden path
+# for MT5 under Wine regardless. Do not "optimize" this back to Alpine
+# without testing the actual import, not just a successful build.
 #
 # Two things from that branch are deliberately NOT copied, because they're
 # broken (see entrypoint.sh for the corrected versions):
@@ -137,11 +140,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 # a difference that broke an earlier build). procps provides pgrep, used to
 # check whether terminal64.exe is actually running. WINE_VERSION pin: see
 # the note at the top of this file — not cosmetic, the generic installer
-# will not complete under a newer Wine.
+# will not complete under a newer Wine. cabextract + unzip are winetricks'
+# own dependencies for unpacking the vcrun2019 redistributable it fetches
+# at runtime — see entrypoint.sh's ensure_vcrun for why that's needed at
+# all (Wine's own ucrtbase.dll is missing at least one symbol MetaTrader5
+# calls).
 RUN dpkg --add-architecture i386 && \
     apt-get update && apt-get install -y --no-install-recommends \
         wget gnupg2 ca-certificates curl xvfb x11-utils winbind procps \
+        cabextract unzip \
         python3 python3-pip python3-numpy \
+    && wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
+    && chmod +x /usr/local/bin/winetricks \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \

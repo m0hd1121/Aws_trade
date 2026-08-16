@@ -60,7 +60,7 @@ than the obvious version:
 |---|---|
 | Debian + WineHQ packages | `wineboot --init` (failure tolerated) |
 | Windows Python install under Wine | MT5 terminal download + install |
-| `MetaTrader5` / `rpyc` / `plumbum` pip install | Terminal config tuning |
+| `MetaTrader5` / `rpyc` / `plumbum` pip install | `vcrun2019` install (see below) + reconcile |
 | Linux-side `mt5linux` | Starting the terminal + RPyC server |
 
 Anything that talks to the network at length or drives a Windows
@@ -139,6 +139,32 @@ that isn't exercised until a container actually starts. If you ever bump
 `WINE_VERSION`, retest an actual headless install against your broker's
 installer — a green build proves nothing here.
 
+### Why vcrun2019 gets installed at boot
+
+Getting past the installer isn't the end of it — the next failure showed
+up one layer deeper, isolated with a standalone `import MetaTrader5` test
+run directly under Wine:
+
+```
+wine: Call from ... to unimplemented function ucrtbase.dll.crealf, aborting
+```
+
+Wine's own reimplementation of `ucrtbase.dll` is missing at least that C99
+complex-math symbol, and `MetaTrader5`'s compiled `.pyd` calls it. The
+fix is the standard one for this class of Wine problem: install
+Microsoft's real Visual C++ 2019 redistributable, which replaces Wine's
+`ucrtbase.dll`/`vcruntime140.dll` with the genuine ones. `entrypoint.sh`
+runs `winetricks -q vcrun2019` on boot, checks `winetricks.log` in the
+prefix first so it's a no-op after the first successful run, and
+self-heals an existing volume the same way the rpyc reconcile does — no
+need to wipe `mt5-wine-prefix` just to pick this up.
+
+This is also the most likely explanation for an earlier, differently
+shaped symptom on a since-abandoned Alpine build, where the same import
+hung forever consuming zero CPU rather than aborting: Wine attempting to
+launch its own crash debugger with nothing available to interact with it,
+rather than a musl-specific defect as first suspected.
+
 ## The volume shadows the image — read this before debugging
 
 `/opt/wineprefix` is a **named Docker volume**, and Docker seeds a named
@@ -203,15 +229,23 @@ phase with a `[mt5-bridge]` prefix.
   the environment it was written in, let alone a broker account. Treat
   first boot as a real install against your specific broker.
 - **Do not switch this image to Alpine.** It was Alpine for a while and
-  builds fine there — smaller and faster. But on Alpine's musl-based Wine,
-  `import MetaTrader5` hangs forever inside the Wine-side Python: no CPU
-  burned, never returns, confirmed with a 180s standalone timeout.
-  Everything else worked on Alpine (Wine 9.0 64-bit, the MT5 install, the
-  RPyC transport, and `import rpyc` in the same interpreter returning in
-  under a second), so it is specifically that compiled `.pyd` failing to
-  load under musl. MT5-under-Wine is finicky even on glibc (see the
+  builds fine there — smaller and faster. `import MetaTrader5` hung
+  forever there (no CPU burned, never returns, confirmed with a 180s
+  standalone timeout) while everything else worked (Wine 9.0 64-bit, the
+  MT5 install, the RPyC transport, `import rpyc` in the same interpreter
+  returning in under a second). At the time this was attributed to
+  musl — **that attribution is now doubtful**: the *same* import later
+  aborted on Debian/glibc with an unimplemented-`ucrtbase.dll.crealf`
+  error (see "Why vcrun2019 gets installed at boot" above), which is the
+  much more likely actual cause of the Alpine hang too — Wine attempting
+  to launch its crash debugger with nothing to interact with it, not a
+  musl-specific defect. This has not been re-tested on Alpine with
+  vcrun2019 installed, so it's not ruled back in either; the honest
+  position is "musl is unconfirmed, not disproven guilty." Debian stays
+  the base regardless, since it's the path that's actually been gotten
+  working end to end. MT5-under-Wine is finicky in general (see the
   [MQL5 forum](https://www.mql5.com/en/forum/371932) threads on Wine
-  version regressions); don't add musl to the pile.
+  version regressions).
 - **Do not let `WINE_VERSION` float.** It is pinned for a concrete,
   observed reason (see "Why Wine is pinned to 9.0" above), not out of
   caution — `winehq-stable` alone would silently pull whatever is
