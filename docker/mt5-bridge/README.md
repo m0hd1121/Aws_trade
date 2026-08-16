@@ -119,6 +119,25 @@ MT5_BRIDGE_PORT=8001
 | `MT5LINUX_PORT` | runtime env | `8001` | RPyC listen port; must match `MT5_BRIDGE_PORT`. |
 | `WINEDEBUG` | runtime env | `-all` | Set to `fixme-all` temporarily when debugging Wine itself. |
 | `WINE_PYTHON_URL` | build arg | Python 3.11.9 (64-bit) | The Python installed *inside* Wine. |
+| `WINE_VERSION` | build arg | `9.0.0.0~bookworm-1` | **Pinned, not cosmetic.** See "Why Wine is pinned" below before changing it. |
+
+### Why Wine is pinned to 9.0
+
+The generic MetaQuotes `mt5setup.exe` includes an anti-tamper check that,
+under Wine 11.0, pops a dialog reading *"A debugger has been found running
+in your system. Please, unload it from memory and restart your program."*
+and refuses to proceed — confirmed by screenshotting the (headless)
+virtual display and watching the installer exit (code 222, nothing
+written) after the dialog is dismissed. The identical installer completed
+cleanly under Wine 9.0. Something Wine changed between those versions —
+plausibly more complete NT debug-API emulation — now trips a check 9.0
+apparently didn't implement accurately enough to trigger.
+
+This is exactly the kind of failure that **builds successfully and only
+breaks at runtime**, on the specific step (the first-boot MT5 install)
+that isn't exercised until a container actually starts. If you ever bump
+`WINE_VERSION`, retest an actual headless install against your broker's
+installer — a green build proves nothing here.
 
 ## The volume shadows the image — read this before debugging
 
@@ -193,6 +212,10 @@ phase with a `[mt5-bridge]` prefix.
   load under musl. MT5-under-Wine is finicky even on glibc (see the
   [MQL5 forum](https://www.mql5.com/en/forum/371932) threads on Wine
   version regressions); don't add musl to the pile.
+- **Do not let `WINE_VERSION` float.** It is pinned for a concrete,
+  observed reason (see "Why Wine is pinned to 9.0" above), not out of
+  caution — `winehq-stable` alone would silently pull whatever is
+  current, which is exactly how this broke once already.
 - Wine running a GUI Windows app in a container is inherently more
   fragile than a real Windows VPS or a paid cloud MT5 bridge (e.g.
   MetaApi). Expect to re-verify after MT5 terminal updates.

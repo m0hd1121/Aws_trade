@@ -36,9 +36,22 @@
 #
 # HONESTY NOTE: this has NOT been end-to-end verified against a live
 # broker in this repo — there's no Docker daemon available here to build
-# it, let alone a broker account to point it at. Alpine/musl + Wine is
-# also a less-trodden path than Debian/glibc for MT5 specifically. Treat
-# first boot as a real install. See docs/DEPLOYMENT.md.
+# it, let alone a broker account to point it at. Treat first boot as a
+# real install. See docs/DEPLOYMENT.md.
+#
+# WINE VERSION IS PINNED, on purpose, to 9.0.0.0~bookworm-1 — do not let it
+# float to whatever `winehq-stable` currently resolves to. Confirmed by
+# direct observation: the generic MetaQuotes mt5setup.exe's own anti-tamper
+# check pops "A debugger has been found running in your system" under Wine
+# 11.0 and refuses to proceed — dismissing the dialog makes the installer
+# exit (code 222) with nothing written, not continue. The SAME installer
+# completed cleanly under Wine 9.0 on an earlier build of this image. That
+# strongly suggests something Wine changed between 9.0 and 11.0 (plausibly
+# more complete NT debug-API emulation) now trips a check 9.0 silently
+# didn't implement accurately enough to trigger. If you ever bump this,
+# retest the actual install against a real installer, headless — a build
+# that completes is not enough evidence; this exact failure mode builds
+# fine and only surfaces at runtime.
 
 # ---------------------------------------------------------------------
 # Builder: install the Wine-side Windows Python and its packages once,
@@ -46,6 +59,7 @@
 # get there (curl, pip, build tooling) is left behind in this stage.
 # ---------------------------------------------------------------------
 FROM debian:bookworm-slim AS builder
+ARG WINE_VERSION=9.0.0.0~bookworm-1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     WINEPREFIX=/opt/wineprefix \
@@ -56,14 +70,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # WineHQ's own packages rather than Debian's older bundled ones. i386 is
 # added because winehq-stable depends on it; the 32-bit tree is left in
-# place (see the note in the runtime stage about not deleting it).
+# place (see the note in the runtime stage about not deleting it). All
+# four wine packages are pinned to the SAME version in one apt-get
+# transaction — pinning only winehq-stable would still let apt satisfy its
+# unversioned dependency on wine-stable with whatever is newest.
 RUN dpkg --add-architecture i386 && \
     apt-get update && apt-get install -y --no-install-recommends \
         wget gnupg2 ca-certificates curl xvfb x11-utils winbind \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
-    && apt-get update && apt-get install -y --no-install-recommends winehq-stable \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        "winehq-stable=${WINE_VERSION}" \
+        "wine-stable=${WINE_VERSION}" \
+        "wine-stable-amd64=${WINE_VERSION}" \
+        "wine-stable-i386=${WINE_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 # Windows-side Python. Only three packages ever run under Wine:
@@ -104,16 +125,19 @@ RUN with-xvfb.sh wine "${WINE_PYTHON}" -m pip install \
     wineserver -w
 
 # ---------------------------------------------------------------------
-# Runtime: Alpine + Wine + a Linux python to drive mt5linux. No compiler,
+# Runtime: Debian + Wine + a Linux python to drive mt5linux. No compiler,
 # no build deps.
 # ---------------------------------------------------------------------
 FROM debian:bookworm-slim
+ARG WINE_VERSION=9.0.0.0~bookworm-1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # xdpyinfo lives in x11-utils on Debian (on Alpine it is its own package —
 # a difference that broke an earlier build). procps provides pgrep, used to
-# check whether terminal64.exe is actually running.
+# check whether terminal64.exe is actually running. WINE_VERSION pin: see
+# the note at the top of this file — not cosmetic, the generic installer
+# will not complete under a newer Wine.
 RUN dpkg --add-architecture i386 && \
     apt-get update && apt-get install -y --no-install-recommends \
         wget gnupg2 ca-certificates curl xvfb x11-utils winbind procps \
@@ -121,7 +145,11 @@ RUN dpkg --add-architecture i386 && \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
-    && apt-get update && apt-get install -y --no-install-recommends winehq-stable \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        "winehq-stable=${WINE_VERSION}" \
+        "wine-stable=${WINE_VERSION}" \
+        "wine-stable-amd64=${WINE_VERSION}" \
+        "wine-stable-i386=${WINE_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 # NOTE: an earlier version deleted /usr/lib/wine/i386-windows and

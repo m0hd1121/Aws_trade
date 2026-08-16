@@ -85,8 +85,10 @@ docker compose logs -f mt5-bridge     # the MT5 terminal installs on FIRST BOOT,
   account available to test it here. Expect to iterate against your
   specific broker's terminal build. The base image is Debian on purpose:
   on Alpine's musl-based Wine, `import MetaTrader5` hangs indefinitely
-  inside the Wine-side Python, while everything else works — see
-  docker/mt5-bridge/README.md.
+  inside the Wine-side Python, while everything else works. Wine itself is
+  further pinned to a specific version (9.0), because the generic MT5
+  installer's anti-tamper check fails under newer Wine — see
+  docker/mt5-bridge/README.md for both.
 - Most brokers ship their own branded MT5 installer (to preselect their
   server list) — set the `MT5_SETUP_URL` environment variable to it
   instead of the generic MetaQuotes one if yours does. It's read on the
